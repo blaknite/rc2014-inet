@@ -156,7 +156,7 @@ void http_parse_request(struct http_client *c) {
   req_file = strtok(NULL, " ");
 
   if (strlen(req_file) > 14) {
-    http_system_response(c, 400, "Bad Request");
+    http_system_response(c, 414, "URI Too Long");
     return;
   }
 
@@ -179,7 +179,7 @@ void http_parse_request(struct http_client *c) {
   if (strncmp(c->req_method, "GET", 3) == 0 || strncmp(c->req_method, "HEAD", 4) == 0) {
     http_response(c);
   } else {
-    http_system_response(c, 400, "Bad Request");
+    http_system_response(c, 404, "Not Found");
   }
 }
 
