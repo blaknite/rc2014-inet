@@ -54,7 +54,7 @@ void http_system_response(struct http_client *c, uint16_t code, uint8_t *message
   c->state = HTTP_TX_HDR;
 }
 
-void http_content_type(struct http_client *c) {
+uint8_t *http_content_type(struct http_client *c) {
   uint8_t ext[4];
   uint8_t i;
 
