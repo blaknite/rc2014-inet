@@ -61,6 +61,8 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
       }
     }
 
+    tcp_tx_rst(s);
+
     if (s->close) {
       (*(s->close))(s);
     }
