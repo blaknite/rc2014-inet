@@ -1,12 +1,16 @@
 # rc2014-inet
 
-Internet tools for the RC2014 - https://rc2014.co.uk
+Internet tools for the RC2014 Pro running CP/M - https://rc2014.co.uk
 
 ## Tools
 
 ### HTTPD
 
 A HTTP server which serves files from the current drive. Listens on the default port 80. It has a 1KB limit on request header size and only responds to GET and HEAD requests.
+
+## Run
+
+These tools expect SIO port 2 to be connected to device that supports SLIP. It currently runs on the fixed IP 192.168.1.51. I've been connecting via a Raspberry Pi via the `slattach` command. 
 
 ## Build
 
