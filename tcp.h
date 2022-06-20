@@ -81,6 +81,7 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph);
 struct tcp_sock *tcp_sock_get(struct ip_hdr *iph);
 void tcp_tick(void);
 struct ip_hdr *tcp_packet_init(struct tcp_sock *s);
+void tcp_sock_close(struct tcp_sock *s);
 void tcp_rx(struct ip_hdr *iph);
 void tcp_tx(struct ip_hdr *iph);
 void tcp_tx_data(struct tcp_sock *s, uint8_t *data, uint16_t len);

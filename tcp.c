@@ -113,6 +113,14 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
   return tcp_sock_init(iph);
 }
 
+void tcp_sock_close(struct tcp_sock *s) {
+  s->state = TCP_CLOSED;
+
+  if (s->close) {
+    (*s->close)(s);
+  }
+}
+
 void tcp_tick(void) {
   uint8_t i;
 
@@ -149,8 +157,18 @@ void tcp_rx(struct ip_hdr *iph) {
   csum = tcp_checksum(iph, tcph, tcp_len);
   if (csum != 0) {
     // printf("> Invalid checksum: %u\n", csum);
+    tcp_sock_close(s);
+    tcp_tx_rst(s);
     return;
   }
+
+  if (tcph->flags & TCP_RST) {
+    // puts("> Connection reset");
+    tcp_sock_close(s);
+    return;
+  }
+
+  tcp_tick();
 
   tcph->sport = ntohs(tcph->sport);
   tcph->dport = ntohs(tcph->dport);
@@ -160,8 +178,6 @@ void tcp_rx(struct ip_hdr *iph) {
   tcph->csum = ntohs(tcph->csum);
   tcph->urp = ntohs(tcph->urp);
 
-  tcp_tick();
-
   s = tcp_sock_get(iph);
 
   if (!s) {
@@ -169,34 +185,16 @@ void tcp_rx(struct ip_hdr *iph) {
     return;
   }
 
-  s->ticks = 0;
-
-  if (tcph->flags & TCP_RST) {
-    // puts("> Connection reset");
-    s->state = TCP_CLOSED;
-
-    if (s->close) {
-      (*s->close)(s);
-    }
-
+  if (s->state != TCP_LISTEN && tcph->seq != s->remote_seq) {
+    // printf("> Invalid sequence: seq=%lu remote_seq=%lu\n", tcph->seq, s->remote_seq);
+    tcp_sock_close(s);
+    tcp_tx_rst(s);
     return;
   }
 
-  if (s->state != TCP_LISTEN && tcph->seq != s->remote_seq) {
-    // printf("> Invalid sequence: seq=%lu remote_seq=%lu\n", tcph->seq, s->remote_seq);
-    s->state = TCP_CLOSED;
-  }
+  s->ticks = 0;
 
   switch (s->state) {
-    case TCP_CLOSED:
-      tcp_tx_rst(s);
-
-      if (s->close) {
-        (*s->close)(s);
-      }
-
-      break;
-
     case TCP_LISTEN:
       if (tcph->flags & TCP_SYN) {
         s->local_seq = rand();
