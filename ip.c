@@ -8,6 +8,7 @@
 
 uint8_t local_address[4] = {192, 168, 1, 51};
 uint16_t packet_id = 0;
+uint8_t debug_enabled = 0;
 
 uint8_t *ip_data(struct ip_hdr *iph) {
   return *iph + ip_hl(iph);
@@ -48,7 +49,19 @@ uint8_t *ip_proto_s(uint8_t proto) {
   }
 }
 
+void ip_debug_enable(void) {
+  debug_enabled = 1;
+}
+
+void ip_debug_disable(void) {
+  debug_enabled = 0;
+}
+
 void ip_debug(struct ip_hdr *iph) {
+  if (debug_enabled == 0) {
+    return;
+  }
+
   printf("%u.%u.%u.%u > %u.%u.%u.%u: %s (%u) length=%u",
     iph->saddr[0], iph->saddr[1], iph->saddr[2], iph->saddr[3],
     iph->daddr[0], iph->daddr[1], iph->daddr[2], iph->daddr[3],
@@ -86,7 +99,7 @@ struct ip_hdr *ip_hdr_init(void) {
 void ip_rx(struct ip_hdr *iph) {
   uint16_t csum = checksum(iph, iph->ihl * 4, 0);
 
-  // ip_debug(iph);
+  ip_debug(iph);
 
   if (iph->version != IPV4) return;
   if (iph->ihl < 5) return;
@@ -114,7 +127,7 @@ void ip_tx(struct ip_hdr *iph) {
   iph->len = htons(len);
   iph->csum = checksum(iph, 20, 0);
 
-  // ip_debug(iph);
+  ip_debug(iph);
 
   slip_tx(iph, len);
 }

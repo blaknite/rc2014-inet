@@ -34,6 +34,8 @@ uint8_t *ip_data(struct ip_hdr *iph);
 uint16_t ip_data_len(struct ip_hdr *iph);
 uint16_t checksum(uint16_t *addr, uint16_t count, uint32_t offset);
 uint8_t *ip_proto_s(uint8_t proto);
+void ip_debug_enable(void);
+void ip_debug_disable(void);
 void ip_debug(struct ip_hdr *iph);
 struct ip_hdr *ip_hdr_init(void);
 void ip_rx(struct ip_hdr *iph);
