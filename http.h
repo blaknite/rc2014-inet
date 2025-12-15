@@ -17,7 +17,7 @@ struct http_client {
   uint8_t rx_buff[HTTP_RX_LEN];
   uint16_t rx_cur;
   uint8_t req_method[8];
-  uint8_t req_file[14];
+  uint8_t req_file[15];
   uint8_t file_mode;
   uint32_t tx_len;
   uint32_t tx_cur;

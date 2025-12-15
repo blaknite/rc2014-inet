@@ -14,14 +14,15 @@ void tcp_init(void) {
 }
 
 void tcp_debug(struct ip_hdr *iph) {
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+  uint8_t *raw = (uint8_t *)tcph;
 
-  printf(" sport=%u dport=%u flags=%x",
-    ntohs(tcph->sport), ntohs(tcph->dport), tcph->flags, ntohs(tcph->win));
+  printf(" sport=%u dport=%u flags=%x\n",
+    ntohs(tcph->sport), ntohs(tcph->dport), tcph->flags);
 }
 
 uint8_t *tcp_data(struct tcp_hdr *tcph) {
-  return *tcph + tcp_hl(tcph);
+  return (uint8_t *)tcph + tcp_hl(tcph);
 }
 
 uint16_t tcp_data_len(struct ip_hdr *iph, struct tcp_hdr *tcph) {
@@ -29,13 +30,15 @@ uint16_t tcp_data_len(struct ip_hdr *iph, struct tcp_hdr *tcph) {
 }
 
 struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
-  struct tcp_hdr *tcph = ip_data(iph);
-  struct tcp_listener *l;
-  struct tcp_sock *s;
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+  struct tcp_listener *l = NULL;
+  struct tcp_sock *s = NULL;
   uint8_t i;
+  uint16_t dport_host = ntohs(tcph->dport);
+  uint16_t sport_host = ntohs(tcph->sport);
 
   for (i = 0; i < TCP_MAX_LISTENERS; i++) {
-    if (tcp_listen_table[i].port == tcph->dport) {
+    if (tcp_listen_table[i].port == dport_host) {
       l = &tcp_listen_table[i];
       break;
     }
@@ -53,7 +56,7 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
   }
 
   if (!s) {
-    s = tcp_sock_table;
+    s = &tcp_sock_table[0];
 
     for (i = 1; i < TCP_MAX_SOCKETS; i++) {
       if (tcp_sock_table[i].ticks > s->ticks) {
@@ -72,8 +75,8 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
 
   s->state = TCP_LISTEN;
 
-  s->sport = tcph->dport;
-  s->dport = tcph->sport;
+  s->sport = dport_host;
+  s->dport = sport_host;
 
   s->open = l->open;
   s->send = l->send;
@@ -87,15 +90,17 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
 }
 
 struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
   uint8_t i;
+  uint16_t sport_host = ntohs(tcph->sport);
+  uint16_t dport_host = ntohs(tcph->dport);
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
     if (tcp_sock_table[i].state == TCP_CLOSED) {
       continue;
     }
 
-    if (tcp_sock_table[i].sport != tcph->dport) {
+    if (tcp_sock_table[i].sport != dport_host) {
       continue;
     }
 
@@ -103,7 +108,7 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
       continue;
     }
 
-    if (tcp_sock_table[i].dport != tcph->sport) {
+    if (tcp_sock_table[i].dport != sport_host) {
       continue;
     }
 
@@ -133,7 +138,7 @@ uint16_t tcp_checksum(struct ip_hdr *iph, uint8_t *data, uint16_t len) {
   struct tcp_psuedo_hdr hdr;
   uint16_t sum;
 
-  memset(hdr, 0, sizeof(struct tcp_psuedo_hdr));
+  memset(&hdr, 0, sizeof(struct tcp_psuedo_hdr));
 
   memcpy(hdr.saddr, iph->saddr, 4);
   memcpy(hdr.daddr, iph->daddr, 4);
@@ -141,34 +146,27 @@ uint16_t tcp_checksum(struct ip_hdr *iph, uint8_t *data, uint16_t len) {
   hdr.proto = iph->proto;
   hdr.len = htons(len);
 
-  sum = ~checksum(&hdr, 12, 0);
+  sum = ~checksum((uint16_t *)&hdr, 12, 0);
 
-  return checksum(data, len, sum);
+  return checksum((uint16_t *)data, len, sum);
 }
 
 void tcp_rx(struct ip_hdr *iph) {
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
   uint8_t *tcpd = tcp_data(tcph);
   uint16_t tcp_len = ip_data_len(iph);
   uint16_t tcpd_len = tcp_data_len(iph, tcph);
   struct tcp_sock *s;
   uint16_t csum;
 
-  csum = tcp_checksum(iph, tcph, tcp_len);
+  csum = tcp_checksum(iph, (uint8_t *)tcph, tcp_len);
   if (csum != 0) {
-    // printf("> Invalid checksum: %u\n", csum);
-    tcp_sock_close(s);
-    tcp_tx_rst(s);
-    return;
-  }
-
-  if (tcph->flags & TCP_RST) {
-    // puts("> Connection reset");
-    tcp_sock_close(s);
     return;
   }
 
   tcp_tick();
+
+  s = tcp_sock_get(iph);
 
   tcph->sport = ntohs(tcph->sport);
   tcph->dport = ntohs(tcph->dport);
@@ -178,15 +176,33 @@ void tcp_rx(struct ip_hdr *iph) {
   tcph->csum = ntohs(tcph->csum);
   tcph->urp = ntohs(tcph->urp);
 
-  s = tcp_sock_get(iph);
+  if (tcph->flags & TCP_RST) {
+    tcp_sock_close(s);
+    return;
+  }
 
   if (!s) {
-    // puts("> No socket");
+    // No socket found - send RST to close the connection on the other end
+    // This prevents the other side from retrying with exponential backoff
+
+    // Create a temporary socket structure to send RST
+    struct tcp_sock temp_sock;
+    memset(&temp_sock, 0, sizeof(struct tcp_sock));
+
+    temp_sock.sport = tcph->dport;
+    temp_sock.dport = tcph->sport;
+    temp_sock.local_seq = tcph->ack_seq;
+    temp_sock.remote_seq = tcph->seq + tcpd_len;
+
+    memcpy(temp_sock.saddr, iph->daddr, 4);
+    memcpy(temp_sock.daddr, iph->saddr, 4);
+
+    tcp_tx_rst(&temp_sock);
+
     return;
   }
 
   if (s->state != TCP_LISTEN && tcph->seq != s->remote_seq) {
-    // printf("> Invalid sequence: seq=%lu remote_seq=%lu\n", tcph->seq, s->remote_seq);
     tcp_sock_close(s);
     tcp_tx_rst(s);
     return;
@@ -294,7 +310,7 @@ void tcp_rx(struct ip_hdr *iph) {
 
 struct ip_hdr *tcp_packet_init(struct tcp_sock *s) {
   struct ip_hdr *iph = ip_hdr_init();
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
 
   iph->len = 20 + 20;
   iph->proto = TCP;
@@ -303,7 +319,7 @@ struct ip_hdr *tcp_packet_init(struct tcp_sock *s) {
   tcph->dport = s->dport;
   tcph->seq = s->local_seq;
   tcph->ack_seq = s->remote_seq;
-  tcph->offset = 5;
+  tcph->offset_reserved = (5 << 4);  // offset 5 (20 bytes), reserved 0
   tcph->win = TCP_PACKET_LEN;
 
   memcpy(iph->daddr, s->daddr, 4);
@@ -312,7 +328,7 @@ struct ip_hdr *tcp_packet_init(struct tcp_sock *s) {
 }
 
 void tcp_tx(struct ip_hdr *iph) {
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
   uint16_t tcp_len = ip_data_len(iph);
 
   tcph->sport = htons(tcph->sport);
@@ -322,14 +338,14 @@ void tcp_tx(struct ip_hdr *iph) {
   tcph->win = htons(tcph->win);
   tcph->urp = htons(tcph->urp);
 
-  tcph->csum = tcp_checksum(iph, tcph, tcp_len);
+  tcph->csum = tcp_checksum(iph, (uint8_t *)tcph, tcp_len);
 
   ip_tx(iph);
 }
 
 void tcp_tx_data(struct tcp_sock *s, uint8_t *data, uint16_t len) {
   struct ip_hdr *iph = tcp_packet_init(s);
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
   uint8_t *tcpd = tcp_data(tcph);
 
   iph->len = iph->len + len;
@@ -346,7 +362,7 @@ void tcp_tx_data(struct tcp_sock *s, uint8_t *data, uint16_t len) {
 
 void tcp_tx_ack(struct tcp_sock *s) {
   struct ip_hdr *iph = tcp_packet_init(s);
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
 
   tcph->flags |= TCP_ACK;
 
@@ -355,7 +371,7 @@ void tcp_tx_ack(struct tcp_sock *s) {
 
 void tcp_tx_synack(struct tcp_sock *s) {
   struct ip_hdr *iph = tcp_packet_init(s);
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
 
   tcph->flags |= TCP_SYN;
   tcph->flags |= TCP_ACK;
@@ -365,7 +381,7 @@ void tcp_tx_synack(struct tcp_sock *s) {
 
 void tcp_tx_fin(struct tcp_sock *s) {
   struct ip_hdr *iph = tcp_packet_init(s);
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
 
   tcph->flags |= TCP_FIN;
   tcph->flags |= TCP_ACK;
@@ -375,7 +391,7 @@ void tcp_tx_fin(struct tcp_sock *s) {
 
 void tcp_tx_rst(struct tcp_sock *s) {
   struct ip_hdr *iph = tcp_packet_init(s);
-  struct tcp_hdr *tcph = ip_data(iph);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
 
   tcph->flags |= TCP_RST;
 
@@ -392,6 +408,7 @@ void tcp_listen(uint16_t port, void (*open)(), void (*recv)(), void (*send)(), v
       tcp_listen_table[i].recv = recv;
       tcp_listen_table[i].send = send;
       tcp_listen_table[i].close = close;
+      break;
     }
   }
 }

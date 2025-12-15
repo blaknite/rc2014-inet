@@ -9,9 +9,10 @@
 uint8_t local_address[4] = {192, 168, 1, 51};
 uint16_t packet_id = 0;
 uint8_t debug_enabled = 0;
+uint8_t debug_verbose = 0;
 
 uint8_t *ip_data(struct ip_hdr *iph) {
-  return *iph + ip_hl(iph);
+  return (uint8_t *)iph + ip_hl(iph);
 }
 
 uint16_t ip_data_len(struct ip_hdr *iph) {
@@ -49,15 +50,20 @@ uint8_t *ip_proto_s(uint8_t proto) {
   }
 }
 
-void ip_debug_enable(void) {
+void ip_debug_enable(uint8_t verbose) {
   debug_enabled = 1;
+  debug_verbose = verbose;
 }
 
 void ip_debug_disable(void) {
   debug_enabled = 0;
+  debug_verbose = 0;
 }
 
 void ip_debug(struct ip_hdr *iph) {
+  uint16_t i;
+  uint16_t len;
+
   if (debug_enabled == 0) {
     return;
   }
@@ -65,19 +71,32 @@ void ip_debug(struct ip_hdr *iph) {
   printf("%u.%u.%u.%u > %u.%u.%u.%u: %s (%u) length=%u",
     iph->saddr[0], iph->saddr[1], iph->saddr[2], iph->saddr[3],
     iph->daddr[0], iph->daddr[1], iph->daddr[2], iph->daddr[3],
-    ip_proto_s(iph->proto), iph->proto, ntohs(iph->len));
+    ip_proto_s(iph->proto), iph->proto, iph->len);
 
   switch (iph->proto) {
     case ICMP:
       icmp_debug(iph);
       break;
-
     case TCP:
       tcp_debug(iph);
       break;
+    default:
+      printf("\n");
+      break;
   }
 
-  printf("\n");
+  if (debug_verbose) {
+    len = iph->len;
+
+    printf("Packet (%u bytes):\n", len);
+
+    for (i = 0; i < len && i < 128; i++) {
+      printf("%02x ", ((uint8_t *)iph)[i]);
+      if ((i + 1) % 16 == 0) printf("\n");
+    }
+
+    if (i % 16 != 0) printf("\n");
+  }
 }
 
 struct ip_hdr *ip_hdr_init(void) {
@@ -85,8 +104,7 @@ struct ip_hdr *ip_hdr_init(void) {
 
   memset(iph, 0, SLIP_MAX);
 
-  iph->version = IPV4;
-  iph->ihl = 5;
+  iph->version_ihl = (IPV4 << 4) | 5;  // version 4, header length 5 (20 bytes)
   iph->id = htons(packet_id++);
   iph->frag_offset = 0x0040;
   iph->ttl = 64;
@@ -97,18 +115,18 @@ struct ip_hdr *ip_hdr_init(void) {
 }
 
 void ip_rx(struct ip_hdr *iph) {
-  uint16_t csum = checksum(iph, iph->ihl * 4, 0);
+  uint16_t csum = checksum((uint16_t *)iph, ip_ihl(iph) * 4, 0);
 
-  ip_debug(iph);
-
-  if (iph->version != IPV4) return;
-  if (iph->ihl < 5) return;
+  if (ip_version(iph) != IPV4) return;
+  if (ip_ihl(iph) < 5) return;
   if (iph->ttl == 0) return;
   if (csum != 0) return;
 
   iph->len = ntohs(iph->len);
 
   if (iph->len > SLIP_MTU) return;
+
+  ip_debug(iph);
 
   switch (iph->proto) {
     case ICMP:
@@ -124,10 +142,10 @@ void ip_rx(struct ip_hdr *iph) {
 void ip_tx(struct ip_hdr *iph) {
   uint16_t len = iph->len;
 
-  iph->len = htons(len);
-  iph->csum = checksum(iph, 20, 0);
-
   ip_debug(iph);
 
-  slip_tx(iph, len);
+  iph->len = htons(len);
+  iph->csum = checksum((uint16_t *)iph, 20, 0);
+
+  slip_tx((uint8_t *)iph, len);
 }

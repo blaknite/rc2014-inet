@@ -7,8 +7,7 @@
 #define UDP 17
 
 struct ip_hdr {
-  uint8_t ihl : 4;
-  uint8_t version : 4;
+  uint8_t version_ihl;  // version in upper 4 bits, ihl in lower 4 bits
   uint8_t tos;
   uint16_t len;
   uint16_t id;
@@ -28,13 +27,15 @@ extern uint16_t __LIB__ htons(uint16_t x) __smallc __z88dk_fastcall;
 #define ntohs(x) htons(x)
 #define ntohl(x) htonl(x)
 
-#define ip_hl(iph) (iph->ihl * 4)
+#define ip_version(iph) ((iph)->version_ihl >> 4)
+#define ip_ihl(iph) ((iph)->version_ihl & 0x0F)
+#define ip_hl(iph) (ip_ihl(iph) * 4)
 
 uint8_t *ip_data(struct ip_hdr *iph);
 uint16_t ip_data_len(struct ip_hdr *iph);
 uint16_t checksum(uint16_t *addr, uint16_t count, uint32_t offset);
 uint8_t *ip_proto_s(uint8_t proto);
-void ip_debug_enable(void);
+void ip_debug_enable(uint8_t verbose);
 void ip_debug_disable(void);
 void ip_debug(struct ip_hdr *iph);
 struct ip_hdr *ip_hdr_init(void);

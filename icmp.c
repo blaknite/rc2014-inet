@@ -6,7 +6,7 @@
 #include "icmp.h"
 
 void icmp_debug(struct ip_hdr *iph) {
-  struct icmp_hdr *icmph = ip_data(iph);
+  struct icmp_hdr *icmph = (struct icmp_hdr *)ip_data(iph);
 
   printf(" type=%u code=%u", icmph->type, icmph->code);
 
@@ -16,12 +16,13 @@ void icmp_debug(struct ip_hdr *iph) {
       printf(" id=%u seq=%u", ntohs(icmph->id), ntohs(icmph->seq));
       break;
   }
+  printf("\n");
 }
 
 void icmp_rx(struct ip_hdr *iph) {
-  struct icmp_hdr *icmph = ip_data(iph);
+  struct icmp_hdr *icmph = (struct icmp_hdr *)ip_data(iph);
   uint16_t icmp_len = ip_data_len(iph);
-  uint16_t csum = checksum(icmph, icmp_len, 0);
+  uint16_t csum = checksum((uint16_t *)icmph, icmp_len, 0);
 
   if (csum != 0) return;
 
@@ -39,12 +40,19 @@ void icmp_rx(struct ip_hdr *iph) {
 }
 
 void icmp_tx_reply(struct ip_hdr *rx_iph) {
-  struct icmp_hdr *rx_icmph = ip_data(rx_iph);
+  struct icmp_hdr *rx_icmph = (struct icmp_hdr *)ip_data(rx_iph);
 
   struct ip_hdr *tx_iph = ip_hdr_init();
-  struct icmp_hdr *tx_icmph = ip_data(tx_iph);
+  struct icmp_hdr *tx_icmph = (struct icmp_hdr *)ip_data(tx_iph);
 
-  uint16_t icmp_dlen = ip_data_len(rx_iph) - 8;
+  uint16_t rx_data_len = ip_data_len(rx_iph);
+  uint16_t icmp_dlen;
+
+  if (rx_data_len < 8) {
+    return;
+  }
+
+  icmp_dlen = rx_data_len - 8;
 
   tx_iph->len = 28 + icmp_dlen;
   tx_iph->proto = ICMP;
@@ -55,16 +63,16 @@ void icmp_tx_reply(struct ip_hdr *rx_iph) {
   tx_icmph->id = rx_icmph->id;
   tx_icmph->seq = rx_icmph->seq;
 
-  memcpy(*tx_icmph + 8, *rx_icmph + 8, icmp_dlen);
+  memcpy((uint8_t *)tx_icmph + 8, (uint8_t *)rx_icmph + 8, icmp_dlen);
 
-  tx_icmph->csum = checksum(tx_icmph, icmp_dlen + 8, 0);
+  tx_icmph->csum = checksum((uint16_t *)tx_icmph, icmp_dlen + 8, 0);
 
   ip_tx(tx_iph);
 }
 
 void icmp_tx_request(uint8_t *daddr) {
   struct ip_hdr *iph = ip_hdr_init();
-  struct icmp_hdr *icmph = ip_data(iph);
+  struct icmp_hdr *icmph = (struct icmp_hdr *)ip_data(iph);
 
   uint16_t icmp_len = 0;
 
@@ -77,7 +85,7 @@ void icmp_tx_request(uint8_t *daddr) {
   icmph->id = 0;
   icmph->seq = 0;
 
-  icmph->csum = checksum(icmph, icmp_len + 8, 0);
+  icmph->csum = checksum((uint16_t *)icmph, icmp_len + 8, 0);
 
   ip_tx(iph);
 }
