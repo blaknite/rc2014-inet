@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <conio.h>
 #include "slip.h"
 #include "ip.h"
 #include "tcp.h"
@@ -63,20 +62,10 @@ int main(int argc, char *argv[]) {
 
   printf("Listening on %u.%u.%u.%u:%u...\n\n",
     local_address[0], local_address[1], local_address[2], local_address[3], port);
-  printf("Press 'q' to quit...\n\n");
 
   while (1) {
-    if (kbhit()) {
-      int ch = getch();
-      if (ch == 'q' || ch == 'Q') {
-        break;
-      }
-    }
-
     slip_rx();
   }
-
-  printf("\nShutting down...\n");
 
   return 0;
 }
