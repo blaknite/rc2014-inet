@@ -415,6 +415,10 @@ void tcp_close(struct tcp_sock *s) {
 
     s->local_seq++;
     s->state = TCP_FIN_WAIT_1;
+
+    if (s->close) {
+      (*s->close)(s);
+    }
   }
 }
 
