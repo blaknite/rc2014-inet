@@ -16,6 +16,10 @@ void slip_init(void) {
   slip_decoder.buffer = slip_rx_buffer;
   slip_decoder.length = 0;
   slip_decoder.escaped = 0;
+
+  // Send an empty slip frame to wake the gateway
+  bdos(CPM_WPUN, SLIP_END);
+  bdos(CPM_WPUN, SLIP_END);
 }
 
 void slip_reset(void) {
