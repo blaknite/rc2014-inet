@@ -214,8 +214,8 @@ void tcp_rx(struct ip_hdr *iph) {
   }
 
   if (s->state != TCP_LISTEN && tcph->seq != s->remote_seq) {
-    tcp_sock_close(s);
     tcp_tx_rst(s);
+    tcp_sock_close(s);
     return;
   }
 
