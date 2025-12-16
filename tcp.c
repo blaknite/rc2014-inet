@@ -398,6 +398,15 @@ void tcp_tx_rst(struct tcp_sock *s) {
   tcp_tx(iph);
 }
 
+void tcp_close(struct tcp_sock *s) {
+  if (s->state == TCP_ESTABLISHED) {
+    tcp_tx_fin(s);
+
+    s->local_seq++;
+    s->state = TCP_FIN_WAIT_1;
+  }
+}
+
 void tcp_listen(uint16_t port, void (*open)(), void (*recv)(), void (*send)(), void (*close)()) {
   uint8_t i;
 

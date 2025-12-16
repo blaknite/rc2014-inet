@@ -143,6 +143,12 @@ void http_response(struct http_client *c) {
 
     http_log(c, 200);
 
+    // For HEAD requests, close file since we won't send the body
+    if (strncmp((char *)c->req_method, "HEAD", 4) == 0) {
+      close(c->fd);
+      c->fd = -1;
+    }
+
     c->state = HTTP_TX_HDR;
   } else {
     http_system_response(c, 404, (uint8_t *)"Not Found");
@@ -252,24 +258,15 @@ void http_send(struct tcp_sock *s, uint16_t len) {
   switch (c->state) {
     case HTTP_TX_HDR:
       tcp_tx_data(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
-      c->state = HTTP_TX_BODY;
-      
-      // For HEAD requests, close file immediately after sending headers
-      if (strncmp((char *)c->req_method, "HEAD", 4) == 0 && c->fd >= 0) {
-        close(c->fd);
-        c->fd = -1;
+
+      if (c->fd == -1) {
+        c->state = HTTP_TX_DONE;
+      } else {
+        c->state = HTTP_TX_BODY;
       }
       break;
 
     case HTTP_TX_BODY:
-      if (strncmp((char *)c->req_method, "GET", 3) != 0) {
-        break;
-      }
-
-      if (c->fd == -1) {
-        break;
-      }
-
       if (len > TCP_PACKET_LEN) {
         len = TCP_PACKET_LEN;
       }
@@ -282,10 +279,15 @@ void http_send(struct tcp_sock *s, uint16_t len) {
         tcp_tx_data(c->s, http_tx_buffer, len);
         c->tx_cur = fdtell(c->fd);
       } else {
-        // EOF or error - close the file
+        // EOF or error - close the file and mark as done
         close(c->fd);
         c->fd = -1;
+        c->state = HTTP_TX_DONE;
       }
+      break;
+
+    case HTTP_TX_DONE:
+      tcp_close(c->s);
       break;
   }
 }

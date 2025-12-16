@@ -90,6 +90,7 @@ void tcp_tx_ack(struct tcp_sock *s);
 void tcp_tx_synack(struct tcp_sock *s);
 void tcp_tx_fin(struct tcp_sock *s);
 void tcp_tx_rst(struct tcp_sock *s);
+void tcp_close(struct tcp_sock *s);
 void tcp_listen(uint16_t port, void (*open)(), void (*recv)(), void (*send)(), void (*close)());
 void tcp_unlisten(uint16_t port);
 
