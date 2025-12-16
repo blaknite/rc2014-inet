@@ -93,25 +93,18 @@ struct netif slipNetif;
 SlipDecoder slipDecoder;
 bool slipInitialized = false;
 
-uint32_t lastActivityTime = 0;
-const uint32_t ACTIVITY_LED_DURATION = 100;
-
 // Flow control - packet queue
 const uint8_t TX_QUEUE_SIZE = 16;
 struct pbuf* txQueue[TX_QUEUE_SIZE];
 uint8_t txQueueHead = 0;
 uint8_t txQueueTail = 0;
-bool txBusy = false;
 
 err_t slipInput(struct pbuf *p, struct netif *inp) {
   return ip_input(p, inp);
 }
 
 void slipTxFrame(struct pbuf *p) {
-  txBusy = true;
-
   digitalWrite(LED_ACTIVITY, HIGH);
-  lastActivityTime = millis();
 
   uint8_t buffer[SLIP_MTU];
   pbuf_copy_partial(p, buffer, p->tot_len, 0);
@@ -141,14 +134,12 @@ void slipTxFrame(struct pbuf *p) {
   Serial.flush();
 
   // Wait for RC2014 to respond (indicates it's ready for next packet)
-  // Timeout after 2 seconds if RC2014 doesn't respond
-  uint32_t waitStart = millis();
-  while (!Serial.available() && (millis() - waitStart) < 2000) {
+  while (!Serial.available()) {
     yield(); // Allow other ESP8266 tasks to run
+    ESP.wdtFeed(); // Feed watchdog timer
   }
 
-  // Transmission complete
-  txBusy = false;
+  digitalWrite(LED_ACTIVITY, LOW);
 }
 
 bool txQueueEnqueue(struct pbuf *p) {
@@ -179,13 +170,8 @@ struct pbuf* txQueueDequeue() {
 }
 
 void slipTx() {
-  // If currently transmitting, do nothing
-  if (txBusy) {
-    return;
-  }
-
-  // Try to dequeue and transmit next packet
   struct pbuf *p = txQueueDequeue();
+
   if (p != NULL) {
     slipTxFrame(p);
     pbuf_free(p); // Decrement reference count
@@ -211,12 +197,9 @@ void slipRx() {
 
   static uint8_t processBuffer[SLIP_MAX_PACKET];
 
+  if (Serial.available()) digitalWrite(LED_ACTIVITY, HIGH);
+
   while (Serial.available()) {
-    uint32_t now = millis();
-
-    digitalWrite(LED_ACTIVITY, HIGH);
-    lastActivityTime = now;
-
     uint8_t b = Serial.read();
     bool packetComplete = slipDecoder.processByte(b);
 
@@ -226,7 +209,7 @@ void slipRx() {
     slipDecoder.reset();
 
     // Validate packet length is reasonable
-    if (packetLen < 20 || packetLen > SLIP_MTU) continue;
+    if (packetLen < 20 || packetLen > SLIP_MTU) break;
 
     memcpy(processBuffer, slipDecoder.buffer, packetLen);
 
@@ -234,18 +217,22 @@ void slipRx() {
     uint8_t version = (processBuffer[0] >> 4) & 0x0F;
     uint8_t headerLen = (processBuffer[0] & 0x0F) * 4;
 
-    if (version != 4 || headerLen < 20 || headerLen > packetLen) continue;
+    if (version != 4 || headerLen < 20 || headerLen > packetLen) break;
 
     // Process the packet
     struct pbuf* p = pbuf_alloc(PBUF_IP, packetLen, PBUF_RAM);
-    if (!p) continue;
+    if (!p) break;
 
     memcpy(p->payload, processBuffer, packetLen);
 
     if (slipNetif.input(p, &slipNetif) != ERR_OK) {
       pbuf_free(p);
     }
+
+    break;
   }
+
+  digitalWrite(LED_ACTIVITY, LOW);
 }
 
 err_t slipNetifInit(struct netif *netif) {
@@ -373,8 +360,4 @@ void loop() {
 
   slipTx();
   slipRx();
-
-  if (millis() - lastActivityTime > ACTIVITY_LED_DURATION) {
-    digitalWrite(LED_ACTIVITY, LOW);
-  }
 }
