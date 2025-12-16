@@ -7,6 +7,7 @@
 #define HTTP_RX_REQ 0
 #define HTTP_TX_HDR 1
 #define HTTP_TX_BODY 2
+#define HTTP_TX_DONE 3
 
 #define HTTP_FILE_MODE_TEXT 0
 #define HTTP_FILE_MODE_BINARY 1
