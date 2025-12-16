@@ -96,14 +96,19 @@ bool slipInitialized = false;
 uint32_t lastActivityTime = 0;
 const uint32_t ACTIVITY_LED_DURATION = 100;
 
+// Flow control - packet queue
+const uint8_t TX_QUEUE_SIZE = 16;
+struct pbuf* txQueue[TX_QUEUE_SIZE];
+uint8_t txQueueHead = 0;
+uint8_t txQueueTail = 0;
+bool txBusy = false;
+
 err_t slipInput(struct pbuf *p, struct netif *inp) {
   return ip_input(p, inp);
 }
 
-err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) {
-  if (p->tot_len > SLIP_MTU) {
-    return ERR_MEM;
-  }
+void slipTxFrame(struct pbuf *p) {
+  txBusy = true;
 
   digitalWrite(LED_ACTIVITY, HIGH);
   lastActivityTime = millis();
@@ -135,17 +140,82 @@ err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) 
   Serial.write(SLIP_END);
   Serial.flush();
 
-  return ERR_OK;
+  // Wait for RC2014 to respond (indicates it's ready for next packet)
+  // Timeout after 2 seconds if RC2014 doesn't respond
+  uint32_t waitStart = millis();
+  while (!Serial.available() && (millis() - waitStart) < 2000) {
+    yield(); // Allow other ESP8266 tasks to run
+  }
+
+  // Transmission complete
+  txBusy = false;
 }
 
-void processSlipData() {
+bool txQueueEnqueue(struct pbuf *p) {
+  uint8_t nextHead = (txQueueHead + 1) % TX_QUEUE_SIZE;
+
+  // Check if queue is full
+  if (nextHead == txQueueTail) {
+    return false;
+  }
+
+  txQueue[txQueueHead] = p;
+  pbuf_ref(p); // Increment reference count so lwIP doesn't free it
+  txQueueHead = nextHead;
+
+  return true;
+}
+
+struct pbuf* txQueueDequeue() {
+  // Check if queue is empty
+  if (txQueueHead == txQueueTail) {
+    return NULL;
+  }
+
+  struct pbuf *p = txQueue[txQueueTail];
+  txQueueTail = (txQueueTail + 1) % TX_QUEUE_SIZE;
+
+  return p;
+}
+
+void slipTx() {
+  // If currently transmitting, do nothing
+  if (txBusy) {
+    return;
+  }
+
+  // Try to dequeue and transmit next packet
+  struct pbuf *p = txQueueDequeue();
+  if (p != NULL) {
+    slipTxFrame(p);
+    pbuf_free(p); // Decrement reference count
+  }
+}
+
+err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) {
+  if (p->tot_len > SLIP_MTU) {
+    return ERR_MEM;
+  }
+
+  if (txQueueEnqueue(p)) {
+    return ERR_OK;
+  } else {
+    // Queue full - connection will fail anyway due to RC2014's strict sequence checking
+    // Tell lwIP to abort the connection immediately rather than retry
+    return ERR_ABRT;
+  }
+}
+
+void slipRx() {
   if (!slipInitialized) return;
 
   static uint8_t processBuffer[SLIP_MAX_PACKET];
 
   while (Serial.available()) {
+    uint32_t now = millis();
+
     digitalWrite(LED_ACTIVITY, HIGH);
-    lastActivityTime = millis();
+    lastActivityTime = now;
 
     uint8_t b = Serial.read();
     bool packetComplete = slipDecoder.processByte(b);
@@ -301,7 +371,8 @@ void loop() {
     return;
   }
 
-  processSlipData();
+  slipTx();
+  slipRx();
 
   if (millis() - lastActivityTime > ACTIVITY_LED_DURATION) {
     digitalWrite(LED_ACTIVITY, LOW);

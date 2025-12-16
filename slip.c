@@ -7,6 +7,7 @@
 uint8_t *slip_rx_buffer;
 uint8_t *slip_tx_buffer;
 slip_decoder_t slip_decoder;
+uint8_t slip_tx_pending = 0;
 
 void slip_init(void) {
   slip_rx_buffer = slip_buffer_alloc();
@@ -63,9 +64,17 @@ void slip_rx(void) {
     c = bdos(CPM_RRDR, 0);
 
     if (slip_rx_byte(c)) {
-      // Packet complete
+      slip_tx_pending = 0;
+
       ip_rx((struct ip_hdr *)slip_decoder.buffer);
       slip_reset();
+
+      // Send empty frame as ACK if no response was sent (gateway flow control)
+      if (!slip_tx_pending) {
+        bdos(CPM_WPUN, SLIP_END);
+        bdos(CPM_WPUN, SLIP_END);
+      }
+
       return;
     }
   }
@@ -94,4 +103,6 @@ void slip_tx(uint8_t *buffer, uint16_t len) {
   }
 
   bdos(CPM_WPUN, SLIP_END);
+
+  slip_tx_pending = 1;
 }
