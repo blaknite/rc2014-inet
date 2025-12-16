@@ -301,8 +301,8 @@ void http_close(struct tcp_sock *s) {
 
   if (c->fd >= 0) {
     close(c->fd);
-    c->fd = -1;
   }
 
-  c->s = NULL;
+  memset(c, 0, sizeof(struct http_client));
+  c->fd = -1;
 }
