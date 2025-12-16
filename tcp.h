@@ -5,6 +5,7 @@
 #define TCP_MAX_SOCKETS 16
 
 #define TCP_PACKET_LEN 536 // 576 MTU - 20 (IP header) - 20 (TCP header)
+#define TCP_IDLE_THRESHOLD 20 // Packets received before socket is considered idle
 
 #define TCP_CLOSED 0
 #define TCP_LISTEN 1
