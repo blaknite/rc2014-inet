@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>RC2014 Internet Server</title>
+    <link href="https://unpkg.com/basscss@8.0.2/css/basscss.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body { color: #333; }
+      h1, h2, h3 { color: #222; }
+      a { color: #ff8800; }
+      a:hover { color: #ff6600; }
+      .border-top { border-top: 1px solid #ccc; }
+    </style>
+  </head>
+
+  <body class="p3">
+    <div class="max-width-3 mx-auto">
+      <header class="mb3">
+        <h1 class="h1 mt0">Hello from my RC2014 👋</h1>
+        <p class="h3 regular">You are connected to a Z80 microcomputer running CP/M.</p>
+      </header>
+
+      <section class="mb3">
+        <p>
+          The <a href="https://rc2014.co.uk">RC2014</a> is a simple 8-bit Z80 based
+          modular computer originally built to run Microsoft BASIC, designed by Spencer
+          Owen. Inspired by the home built computers of the late 70s and computer
+          revolution of the early 80s. This system runs CP/M with 64K RAM, pageable
+          ROM, and compact flash storage.
+        </p>
+        <p>
+          This server implements a minimal HTTP daemon and TCP/IP stack written in C for
+          the Z80 processor. It includes HTTPD and PING utilities. Source code available
+          at <a href="https://github.com/blaknite/rc2014-inet">github.com/blaknite/rc2014-inet</a>.
+        </p>
+      </section>
+
+      <section class="mb3">
+        <h2 class="h2">How It Works</h2>
+        <p>
+          This system bridges the RC2014 to the internet through a two-part architecture:
+          a WiFi-to-SLIP gateway and a TCP/IP stack running natively on CP/M.
+        </p>
+
+        <h3 class="h3">RC2014 WiFi SLIP Gateway</h3>
+        <p>
+          Network packets are transmitted over SLIP (Serial Line Internet Protocol) via
+          SIO port 2. The <a href="https://rc2014.co.uk/modules/esp8266-wifi-module/">RC2014
+          ESP8266 WiFi Module</a> handles WiFi connectivity and protocol translation,
+          forwarding packets between the RC2014's serial interface and the network.
+          SLIP encodes IP packets using special byte sequences (0xC0 for frame boundaries,
+          0xDB for escape sequences) enabling reliable packet transmission over serial.
+        </p>
+
+        <h3 class="h3">RC2014 CP/M TCP/IP Stack</h3>
+        <p>
+          The TCP/IP stack is written in C and compiled with z88dk for the Z80 processor.
+          It implements IP packet routing with checksum verification, ICMP for ping
+          functionality, and a full TCP state machine supporting connection establishment
+          (SYN/SYN-ACK/ACK handshake), data transfer with PSH/ACK flags, and graceful
+          termination (FIN/ACK sequence). The HTTP server maintains a listener table,
+          spawns socket structures for incoming connections, parses request headers
+          with a 1KB limit, and serves files directly from the CP/M filesystem.
+        </p>
+      </section>
+
+      <footer class="pt2 border-top">
+        <p class="h6">Served from my RC2014 running CP/M via SLIP</p>
+      </footer>
+    </div>
+  </body>
+</html>
