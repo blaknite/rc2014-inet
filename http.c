@@ -50,6 +50,8 @@ void http_system_response(struct http_client *c, uint16_t code, uint8_t *message
   ptr += sprintf((char *)ptr, "\r\n");
   ptr += sprintf((char *)ptr, "%u %s\r\n", code, (char *)message);
 
+  c->tx_cur = ptr - http_tx_buffer;  // Store response length
+
   http_log(c, code);
 
   c->state = HTTP_TX_HDR;
@@ -134,12 +136,15 @@ void http_response(struct http_client *c) {
 
   if (c->fd >= 0) {
     c->tx_len = http_content_length(c, c->fd);
+    c->tx_cur = 0;
 
     ptr = &http_tx_buffer[0];
     ptr += sprintf((char *)ptr, "HTTP/1.0 200 OK\r\n");
     ptr += sprintf((char *)ptr, "Content-Type: %s\r\n", (char *)http_content_type(c));
     ptr += sprintf((char *)ptr, "Content-Length: %lu\r\n", c->tx_len);
     ptr += sprintf((char *)ptr, "\r\n");
+
+    c->tx_cur = ptr - http_tx_buffer;  // Store header length
 
     http_log(c, 200);
 
@@ -257,12 +262,14 @@ void http_send(struct tcp_sock *s, uint16_t len) {
 
   switch (c->state) {
     case HTTP_TX_HDR:
-      tcp_tx_data(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
+      tcp_tx_data(c->s, http_tx_buffer, (uint16_t)c->tx_cur);
 
       if (c->fd == -1) {
         c->state = HTTP_TX_DONE;
+        c->tx_cur = 0;
       } else {
         c->state = HTTP_TX_BODY;
+        c->tx_cur = 0;  // Reset for body transfer
       }
       break;
 
