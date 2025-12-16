@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <conio.h>
 #include "slip.h"
 #include "ip.h"
 #include "tcp.h"
@@ -33,21 +32,12 @@ int main(int argc, char *argv[]) {
   ip_debug_enable(0);
 
   printf("Pinging %u.%u.%u.%u...\n\n", ping_addr[0], ping_addr[1], ping_addr[2], ping_addr[3]);
-  printf("Press 'q' to quit...\n\n");
 
   while (i--) {
     icmp_tx_request(ping_addr);
     slip_rx();
 
     printf("\n");
-
-    if (kbhit()) {
-      int ch = getch();
-      if (ch == 'q' || ch == 'Q') {
-        printf("Stopped.\n");
-        break;
-      }
-    }
 
     sleep(2);
   }
