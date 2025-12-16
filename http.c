@@ -285,6 +285,13 @@ void http_send(struct tcp_sock *s, uint16_t len) {
       if (len > 0) {
         tcp_tx_data(c->s, http_tx_buffer, len);
         c->tx_cur = fdtell(c->fd);
+        
+        // Check if we've sent everything
+        if (c->tx_cur >= c->tx_len) {
+          close(c->fd);
+          c->fd = -1;
+          c->state = HTTP_TX_DONE;
+        }
       } else {
         // EOF or error - close the file and mark as done
         close(c->fd);
