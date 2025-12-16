@@ -21,6 +21,7 @@ struct http_client {
   uint8_t file_mode;
   uint32_t tx_len;
   uint32_t tx_cur;
+  int16_t fd;
 };
 
 void http_init(void);

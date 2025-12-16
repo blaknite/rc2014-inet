@@ -127,14 +127,13 @@ uint32_t http_content_length(struct http_client *c, int16_t fd) {
 
 void http_response(struct http_client *c) {
   uint8_t *ptr;
-  int16_t fd;
 
   c->file_mode = http_file_mode(c);
 
-  fd = http_file_open(c);
+  c->fd = http_file_open(c);
 
-  if (fd >= 0) {
-    c->tx_len = http_content_length(c, fd);
+  if (c->fd >= 0) {
+    c->tx_len = http_content_length(c, c->fd);
 
     ptr = &http_tx_buffer[0];
     ptr += sprintf((char *)ptr, "HTTP/1.0 200 OK\r\n");
@@ -145,8 +144,6 @@ void http_response(struct http_client *c) {
     http_log(c, 200);
 
     c->state = HTTP_TX_HDR;
-
-    close(fd);
   } else {
     http_system_response(c, 404, (uint8_t *)"Not Found");
   }
@@ -215,6 +212,7 @@ void http_open(struct tcp_sock *s) {
 
       http_client_table[i].s = s;
       http_client_table[i].state = HTTP_RX_REQ;
+      http_client_table[i].fd = -1;
 
       return;
     }
@@ -246,7 +244,6 @@ void http_recv(struct tcp_sock *s, uint8_t *data, uint16_t len) {
 
 void http_send(struct tcp_sock *s, uint16_t len) {
   struct http_client *c = http_get_client(s);
-  int16_t fd;
 
   if (!c) {
     return;
@@ -256,6 +253,12 @@ void http_send(struct tcp_sock *s, uint16_t len) {
     case HTTP_TX_HDR:
       tcp_tx_data(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
       c->state = HTTP_TX_BODY;
+      
+      // For HEAD requests, close file immediately after sending headers
+      if (strncmp((char *)c->req_method, "HEAD", 4) == 0 && c->fd >= 0) {
+        close(c->fd);
+        c->fd = -1;
+      }
       break;
 
     case HTTP_TX_BODY:
@@ -263,9 +266,7 @@ void http_send(struct tcp_sock *s, uint16_t len) {
         break;
       }
 
-      fd = http_file_open(c);
-
-      if (fd == -1) {
+      if (c->fd == -1) {
         break;
       }
 
@@ -273,17 +274,18 @@ void http_send(struct tcp_sock *s, uint16_t len) {
         len = TCP_PACKET_LEN;
       }
 
-      lseek(fd, c->tx_cur, SEEK_SET);
+      lseek(c->fd, c->tx_cur, SEEK_SET);
 
-      len = read(fd, http_tx_buffer, len);
+      len = read(c->fd, http_tx_buffer, len);
 
       if (len > 0) {
         tcp_tx_data(c->s, http_tx_buffer, len);
+        c->tx_cur = fdtell(c->fd);
+      } else {
+        // EOF or error - close the file
+        close(c->fd);
+        c->fd = -1;
       }
-
-      c->tx_cur = fdtell(fd);
-
-      close(fd);
       break;
   }
 }
@@ -293,6 +295,11 @@ void http_close(struct tcp_sock *s) {
 
   if (!c) {
     return;
+  }
+
+  if (c->fd >= 0) {
+    close(c->fd);
+    c->fd = -1;
   }
 
   c->s = NULL;
