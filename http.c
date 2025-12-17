@@ -229,6 +229,10 @@ void http_open(struct tcp_sock *s) {
       return;
     }
   }
+
+  // No free HTTP client - reject the connection
+  tcp_tx_rst(s);
+  tcp_sock_close(s);
 }
 
 void http_recv(struct tcp_sock *s, uint8_t *data, uint16_t len) {
@@ -285,8 +289,8 @@ void http_send(struct tcp_sock *s, uint16_t len) {
 
       if (len > 0) {
         tcp_tx_data(c->s, http_tx_buffer, len);
-        c->tx_cur = fdtell(c->fd);
-        
+        c->tx_cur += len;
+
         // Check if we've sent everything
         if (c->tx_cur >= c->tx_len) {
           close(c->fd);

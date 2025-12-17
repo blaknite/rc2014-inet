@@ -219,6 +219,11 @@ void tcp_rx(struct ip_hdr *iph) {
     temp_sock.local_seq = tcph->ack_seq;
     temp_sock.remote_seq = tcph->seq + tcpd_len;
 
+    // FIN flag consumes 1 sequence number like data does
+    if (tcph->flags & TCP_FIN) {
+      temp_sock.remote_seq++;
+    }
+
     memcpy(temp_sock.saddr, iph->daddr, 4);
     memcpy(temp_sock.daddr, iph->saddr, 4);
 
@@ -285,20 +290,19 @@ void tcp_rx(struct ip_hdr *iph) {
         }
       }
 
-      if (s->send) {
-        (*s->send)(s, tcph->win);
-      }
-
       if (tcph->flags & TCP_FIN) {
         s->remote_seq++;
 
         tcp_tx_fin(s);
 
+        s->local_seq++;
         s->state = TCP_LAST_ACK;
 
         if (s->close) {
           (*s->close)(s);
         }
+      } else if (s->send) {
+        (*s->send)(s, tcph->win);
       }
       break;
 
@@ -310,9 +314,11 @@ void tcp_rx(struct ip_hdr *iph) {
 
     case TCP_FIN_WAIT_1:
       if (tcph->flags & (TCP_FIN|TCP_ACK)) {
+        s->remote_seq++;
         tcp_tx_ack(s);
         s->state = TCP_CLOSED;
       } else if (tcph->flags & TCP_FIN) {
+        s->remote_seq++;
         tcp_tx_ack(s);
         s->state = TCP_CLOSING;
       } else if (tcph->flags & TCP_ACK) {
@@ -322,6 +328,7 @@ void tcp_rx(struct ip_hdr *iph) {
 
     case TCP_FIN_WAIT_2:
       if (tcph->flags & TCP_FIN) {
+        s->remote_seq++;
         tcp_tx_ack(s);
         s->state = TCP_CLOSED;
       }
