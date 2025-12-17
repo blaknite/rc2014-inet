@@ -1,7 +1,7 @@
 #ifndef __HTTP_H__
 #define __HTTP_H__
 
-#define HTTP_MAX_CLIENTS 16
+#define HTTP_MAX_CLIENTS 8
 #define HTTP_RX_LEN 1024
 
 #define HTTP_RX_REQ 0

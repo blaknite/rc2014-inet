@@ -51,13 +51,17 @@ struct SlipDecoder {
   uint8_t buffer[SLIP_MAX_PACKET];
   size_t length;
   bool escaped;
+  uint32_t lastRxTime;
 
   void reset() {
     length = 0;
     escaped = false;
+    lastRxTime = 0;
   }
 
   bool processByte(uint8_t b) {
+    lastRxTime = millis();
+
     if (b == SLIP_END) {
       if (length > 0) return true;
 
@@ -86,6 +90,13 @@ struct SlipDecoder {
     }
 
     return false;
+  }
+
+  void checkTimeout() {
+    // Reset if we have a partial frame that hasn't received data in 2 seconds
+    if (length > 0 && millis() - lastRxTime > 2000) {
+      reset();
+    }
   }
 };
 
@@ -126,18 +137,12 @@ void slipTxFrame(struct pbuf *p) {
       Serial.write(b);
     }
 
-    delayMicroseconds(500);
+    delayMicroseconds(1000);
   }
 
   // Add SLIP_END to end frame
   Serial.write(SLIP_END);
   Serial.flush();
-
-  // Wait for RC2014 to respond (indicates it's ready for next packet)
-  while (!Serial.available()) {
-    yield(); // Allow other ESP8266 tasks to run
-    ESP.wdtFeed(); // Feed watchdog timer
-  }
 
   digitalWrite(LED_ACTIVITY, LOW);
 }
@@ -170,6 +175,14 @@ struct pbuf* txQueueDequeue() {
 }
 
 void slipTx() {
+  // Check for stalled partial frames and reset if needed
+  slipDecoder.checkTimeout();
+
+  // Don't transmit if we're in the middle of receiving a frame
+  if (slipDecoder.length > 0) {
+    return;
+  }
+
   struct pbuf *p = txQueueDequeue();
 
   if (p != NULL) {
