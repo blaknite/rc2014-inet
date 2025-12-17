@@ -56,28 +56,19 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
     }
   }
 
-  // No free socket - try to evict the oldest one
+  // No free socket - evict the oldest one
   if (!s) {
-    for (i = 0; i < TCP_MAX_SOCKETS; i++) {
-      if (tcp_sock_table[i].ticks < TCP_IDLE_THRESHOLD) {
-        continue;
-      }
+    s = &tcp_sock_table[0];
 
-      if (!s || tcp_sock_table[i].ticks > s->ticks) {
+    for (i = 1; i < TCP_MAX_SOCKETS; i++) {
+      if (tcp_sock_table[i].ticks > s->ticks) {
         s = &tcp_sock_table[i];
       }
     }
   }
 
-  // No socket available (all are active)
-  if (!s) {
-    return NULL;
-  }
-
-  // Evict the socket if it was in use
+  // Silently evict the socket if it was in use
   if (s->state != TCP_CLOSED) {
-    tcp_tx_rst(s);
-
     if (s->close) {
       (*(s->close))(s);
     }
