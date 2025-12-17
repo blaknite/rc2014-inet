@@ -66,6 +66,7 @@ struct tcp_sock {
   uint16_t sport;
   uint16_t dport;
   uint8_t state;
+  uint8_t incarnation;  // Connection instance ID to distinguish reused sockets
   uint32_t local_seq;
   uint32_t remote_seq;
   uint16_t ticks;
