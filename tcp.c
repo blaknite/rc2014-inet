@@ -7,6 +7,7 @@
 
 struct tcp_listener *tcp_listen_table;
 struct tcp_sock *tcp_sock_table;
+static uint8_t tcp_incarnation_counter = 0;
 
 void tcp_init(void) {
   tcp_listen_table = calloc(TCP_MAX_LISTENERS, sizeof(struct tcp_listener));
@@ -85,6 +86,7 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
   memset(s, 0, sizeof(struct tcp_sock));
 
   s->state = TCP_LISTEN;
+  s->incarnation = ++tcp_incarnation_counter;  // Assign new incarnation ID
 
   s->sport = dport_host;
   s->dport = sport_host;
@@ -105,6 +107,8 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
   uint8_t i;
   uint16_t sport_host = ntohs(tcph->sport);
   uint16_t dport_host = ntohs(tcph->dport);
+  uint32_t ack_seq_host = ntohl(tcph->ack_seq);
+  uint8_t pkt_incarnation;
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
     if (tcp_sock_table[i].state == TCP_CLOSED) {
@@ -121,6 +125,16 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
 
     if (tcp_sock_table[i].dport != sport_host) {
       continue;
+    }
+
+    // For established connections, verify incarnation matches to prevent old packets
+    // from a previous connection instance from being accepted
+    if (tcp_sock_table[i].state >= TCP_SYN_RCVD && (tcph->flags & TCP_ACK)) {
+      pkt_incarnation = (ack_seq_host - 1) >> 24;
+      if (pkt_incarnation != tcp_sock_table[i].incarnation) {
+        // Wrong incarnation - this is an old packet for a previous connection
+        continue;
+      }
     }
 
     return &tcp_sock_table[i];
@@ -226,6 +240,8 @@ void tcp_rx(struct ip_hdr *iph) {
       if (tcph->flags & TCP_SYN) {
         s->local_seq = rand();
         s->local_seq |= ((uint32_t)rand()) << 16;
+        // Embed incarnation in top 8 bits of ISN for connection tracking
+        s->local_seq = (s->local_seq & 0x00FFFFFF) | ((uint32_t)s->incarnation << 24);
         s->remote_seq = tcph->seq + 1;
 
         tcp_tx_synack(s);
