@@ -10,6 +10,7 @@ uint8_t *mime_types[] = {
   "htm", "text/html",
   "txt", "text/plain",
   "png", "image/png",
+  "jpg", "image/jpeg",
   NULL
 };
 
