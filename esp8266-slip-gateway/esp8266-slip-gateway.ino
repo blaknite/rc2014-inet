@@ -143,7 +143,7 @@ void slipTxFrame(struct pbuf *p) {
       Serial.write(b);
     }
 
-    delayMicroseconds(750);
+    delayMicroseconds(500);
   }
 
   // Add SLIP_END to end frame
