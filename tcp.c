@@ -222,6 +222,12 @@ void tcp_rx(struct ip_hdr *iph) {
     return;
   }
 
+  // Retransmission - already processed, drop silently
+  if (s->state != TCP_LISTEN && tcph->seq < s->remote_seq) {
+    return;
+  }
+
+  // Out of order packet
   if (s->state != TCP_LISTEN && tcph->seq != s->remote_seq) {
     tcp_tx_rst(s);
     tcp_sock_close(s);
