@@ -80,10 +80,9 @@ void ip_debug(struct ip_hdr *iph) {
     case TCP:
       tcp_debug(iph);
       break;
-    default:
-      printf("\n");
-      break;
   }
+
+  printf("\n");
 
   if (debug_verbose) {
     len = iph->len;
