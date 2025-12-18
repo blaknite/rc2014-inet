@@ -103,6 +103,9 @@ struct SlipDecoder {
 struct netif slipNetif;
 SlipDecoder slipDecoder;
 bool slipInitialized = false;
+uint32_t lastTxTime = 0;
+uint32_t lastRxTime = 0;
+uint32_t txPacingDelay = 250;  // Start at 250ms, adjust dynamically
 
 // Flow control - packet queue
 const uint8_t TX_QUEUE_SIZE = 16;
@@ -137,13 +140,14 @@ void slipTxFrame(struct pbuf *p) {
       Serial.write(b);
     }
 
-    delayMicroseconds(1000);
+    delayMicroseconds(750);
   }
 
   // Add SLIP_END to end frame
   Serial.write(SLIP_END);
   Serial.flush();
 
+  lastTxTime = millis();
   digitalWrite(LED_ACTIVITY, LOW);
 }
 
@@ -162,6 +166,15 @@ bool txQueueEnqueue(struct pbuf *p) {
   return true;
 }
 
+struct pbuf* txQueuePeek() {
+  // Check if queue is empty
+  if (txQueueHead == txQueueTail) {
+    return NULL;
+  }
+
+  return txQueue[txQueueTail];
+}
+
 struct pbuf* txQueueDequeue() {
   // Check if queue is empty
   if (txQueueHead == txQueueTail) {
@@ -174,21 +187,54 @@ struct pbuf* txQueueDequeue() {
   return p;
 }
 
-void slipTx() {
-  // Check for stalled partial frames and reset if needed
-  slipDecoder.checkTimeout();
+bool isTcpControlPacket(struct pbuf *p) {
+  // Check if this is an IP packet with TCP protocol
+  if (p->tot_len < 20) return false;  // Too small for IP header
+  
+  uint8_t *data = (uint8_t*)p->payload;
+  uint8_t version = (data[0] >> 4) & 0x0F;
+  uint8_t headerLen = (data[0] & 0x0F) * 4;
+  uint8_t protocol = data[9];
+  
+  if (version != 4 || headerLen < 20 || protocol != 6) {
+    return false;  // Not IPv4 or not TCP
+  }
+  
+  // Check if packet is large enough for TCP header
+  if (p->tot_len < headerLen + 14) return false;  // Need at least partial TCP header
+  
+  // Get TCP flags (13th byte of TCP header)
+  uint8_t tcpFlags = data[headerLen + 13];
+  
+  // Check for SYN, FIN, or pure ACK (ACK without data)
+  bool isSyn = tcpFlags & 0x02;  // SYN flag
+  bool isFin = tcpFlags & 0x01;  // FIN flag
+  bool isAck = tcpFlags & 0x10;  // ACK flag
+  
+  // Calculate TCP header length
+  uint8_t tcpHeaderLen = (data[headerLen + 12] >> 4) * 4;
+  uint16_t totalHeaderLen = headerLen + tcpHeaderLen;
+  
+  // Pure ACK: has ACK flag set and no data payload
+  bool isPureAck = isAck && (p->tot_len <= totalHeaderLen);
+  
+  return isSyn || isFin || isPureAck;
+}
 
-  // Don't transmit if we're in the middle of receiving a frame
-  if (slipDecoder.length > 0) {
+void slipTx() {
+  // Peek at the next packet without dequeuing
+  struct pbuf *p = txQueuePeek();
+  if (p == NULL) return;
+  
+  // Apply flow control only for data packets, not control packets (SYN, FIN, pure ACK)
+  if (!isTcpControlPacket(p) && lastTxTime > 0 && millis() - lastTxTime < txPacingDelay) {
     return;
   }
 
-  struct pbuf *p = txQueueDequeue();
-
-  if (p != NULL) {
-    slipTxFrame(p);
-    pbuf_free(p); // Decrement reference count
-  }
+  // Now dequeue and transmit
+  txQueueDequeue();
+  slipTxFrame(p);
+  pbuf_free(p); // Decrement reference count
 }
 
 err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) {
@@ -208,9 +254,19 @@ err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) 
 void slipRx() {
   if (!slipInitialized) return;
 
+  // Check for stalled partial frames and reset if needed
+  slipDecoder.checkTimeout();
+
   static uint8_t processBuffer[SLIP_MAX_PACKET];
 
-  if (Serial.available()) digitalWrite(LED_ACTIVITY, HIGH);
+  if (Serial.available()) {
+    digitalWrite(LED_ACTIVITY, HIGH);
+
+    // Mark when we start receiving a frame
+    if (lastRxTime == 0) {
+      lastRxTime = millis();
+    }
+  }
 
   while (Serial.available()) {
     uint8_t b = Serial.read();
@@ -241,6 +297,25 @@ void slipRx() {
     if (slipNetif.input(p, &slipNetif) != ERR_OK) {
       pbuf_free(p);
     }
+
+    // Adaptive flow control: measure how long it takes to receive a frame
+    // Only measure for non-control packets to get accurate data transmission rates
+    uint32_t now = millis();
+    if (lastRxTime > 0 && !isTcpControlPacket(p)) {
+      // Calculate the duration of receiving this frame
+      // This tells us how long the RC2014 takes to transmit a packet
+      uint32_t frameDuration = now - lastRxTime;
+
+      // Smooth the pacing delay using exponential moving average
+      // Weight: 75% old value, 25% new measurement
+      txPacingDelay = (txPacingDelay * 3 + frameDuration) / 4;
+
+      // Clamp between 50ms (max throughput) and 500ms (conservative)
+      if (txPacingDelay < 50) txPacingDelay = 50;
+      if (txPacingDelay > 500) txPacingDelay = 500;
+    }
+
+    lastRxTime = 0;  // Reset for next frame
 
     break;
   }
