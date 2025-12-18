@@ -7,7 +7,7 @@
 
 struct tcp_listener *tcp_listen_table;
 struct tcp_sock *tcp_sock_table;
-static uint8_t tcp_incarnation_counter = 0;
+static uint8_t next_conn_id = 0;
 
 void tcp_init(void) {
   tcp_listen_table = calloc(TCP_MAX_LISTENERS, sizeof(struct tcp_listener));
@@ -76,7 +76,7 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
   memset(s, 0, sizeof(struct tcp_sock));
 
   s->state = TCP_LISTEN;
-  s->incarnation = ++tcp_incarnation_counter;  // Assign new incarnation ID
+  s->conn_id = ++next_conn_id;
 
   s->sport = dport_host;
   s->dport = sport_host;
@@ -92,13 +92,18 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
   return s;
 }
 
+uint8_t tcp_sock_matches_conn_id(struct tcp_sock *s, uint32_t ack_seq) {
+  uint32_t seq_offset = s->local_seq - s->local_isn;
+  uint8_t pkt_conn_id = (ack_seq - seq_offset) >> 24;
+  return pkt_conn_id == s->conn_id;
+}
+
 struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
   struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
   uint8_t i;
   uint16_t sport_host = ntohs(tcph->sport);
   uint16_t dport_host = ntohs(tcph->dport);
   uint32_t ack_seq_host = ntohl(tcph->ack_seq);
-  uint8_t pkt_incarnation;
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
     if (tcp_sock_table[i].state == TCP_CLOSED) {
@@ -117,12 +122,9 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
       continue;
     }
 
-    // For established connections, verify incarnation matches to prevent old packets
-    // from a previous connection instance from being accepted
+    // Verify conn_id to reject old packets from a previous connections.
     if (tcp_sock_table[i].state >= TCP_SYN_RCVD && (tcph->flags & TCP_ACK)) {
-      pkt_incarnation = (ack_seq_host - 1) >> 24;
-      if (pkt_incarnation != tcp_sock_table[i].incarnation) {
-        // Wrong incarnation - this is an old packet for a previous connection
+      if (!tcp_sock_matches_conn_id(&tcp_sock_table[i], ack_seq_host)) {
         continue;
       }
     }
@@ -197,10 +199,6 @@ void tcp_rx(struct ip_hdr *iph) {
   }
 
   if (!s) {
-    // No socket found - send RST to close the connection on the other end
-    // This prevents the other side from retrying with exponential backoff
-
-    // Create a temporary socket structure to send RST
     struct tcp_sock temp_sock;
     memset(&temp_sock, 0, sizeof(struct tcp_sock));
 
@@ -209,7 +207,6 @@ void tcp_rx(struct ip_hdr *iph) {
     temp_sock.local_seq = tcph->ack_seq;
     temp_sock.remote_seq = tcph->seq + tcpd_len;
 
-    // FIN flag consumes 1 sequence number like data does
     if (tcph->flags & TCP_FIN) {
       temp_sock.remote_seq++;
     }
@@ -241,8 +238,8 @@ void tcp_rx(struct ip_hdr *iph) {
       if (tcph->flags & TCP_SYN) {
         s->local_seq = rand();
         s->local_seq |= ((uint32_t)rand()) << 16;
-        // Embed incarnation in top 8 bits of ISN for connection tracking
-        s->local_seq = (s->local_seq & 0x00FFFFFF) | ((uint32_t)s->incarnation << 24);
+        s->local_seq = (s->local_seq & 0x00FFFFFF) | ((uint32_t)s->conn_id << 24);
+        s->local_isn = s->local_seq;
         s->remote_seq = tcph->seq + 1;
 
         tcp_tx_synack(s);
@@ -441,7 +438,13 @@ void tcp_close(struct tcp_sock *s) {
   }
 }
 
-void tcp_listen(uint16_t port, void (*open)(), void (*recv)(), void (*send)(), void (*close)()) {
+void tcp_listen(
+  uint16_t port,
+  void (*open)(struct tcp_sock *),
+  void (*recv)(struct tcp_sock *, uint8_t *, uint16_t),
+  void (*send)(struct tcp_sock *, uint16_t),
+  void (*close)(struct tcp_sock *)
+) {
   uint8_t i;
 
   for (i = 0; i < TCP_MAX_LISTENERS; i++) {
