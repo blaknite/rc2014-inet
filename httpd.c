@@ -9,7 +9,6 @@
 // 4 HTTP clients
 #pragma output CLIB_OPEN_MAX = 4
 
-#define ARG_ADDR "-A"
 #define ARG_PORT "-P"
 #define ARG_DEBUG "-D"
 #define ARG_VERBOSE "-V"
@@ -21,7 +20,6 @@ int main(int argc, char *argv[]) {
   uint16_t port = 80;
   uint8_t debug = 0;
   uint8_t verbose = 0;
-  unsigned int a, b, c, d;
 
   for (i = 0; i < argc; i++) {
     if (!argv[i]) {
@@ -35,14 +33,7 @@ int main(int argc, char *argv[]) {
 
     value = strtok(NULL, "=");
 
-    if (strcmp(ARG_ADDR, key) == 0) {
-      if (value && sscanf(value, "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
-        local_address[0] = a;
-        local_address[1] = b;
-        local_address[2] = c;
-        local_address[3] = d;
-      }
-    } else if (strcmp(ARG_PORT, key) == 0) {
+    if (strcmp(ARG_PORT, key) == 0) {
       if (value) {
         sscanf(value, "%u", &port);
       }
@@ -63,12 +54,9 @@ int main(int argc, char *argv[]) {
 
   tcp_listen(port, http_open, http_recv, http_send, http_close);
 
-  printf("Listening on %u.%u.%u.%u:%u...\n\n",
-    local_address[0], local_address[1], local_address[2], local_address[3], port);
+  printf("Listening on port %u...\n\n", port);
 
   while (1) {
     slip_rx();
   }
-
-  return 0;
 }
