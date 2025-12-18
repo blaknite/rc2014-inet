@@ -63,7 +63,7 @@ uint8_t *http_content_type(struct http_client *c) {
   uint8_t i;
   uint16_t len = strlen((char *)c->req_file);
 
-  if (len < 3) {
+  if (len < 4) {
     return (uint8_t *)"application/octet-stream";
   }
 
@@ -83,7 +83,7 @@ uint8_t http_file_mode(struct http_client *c) {
   uint8_t i;
   uint16_t len = strlen((char *)c->req_file);
 
-  if (len < 3) {
+  if (len < 4) {
     return HTTP_FILE_MODE_BINARY;
   }
 
