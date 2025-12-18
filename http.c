@@ -236,6 +236,8 @@ void http_open(struct tcp_sock *s) {
   }
 
   // No free HTTP client - reject the connection
+  printf("ERROR: Client limit reached, rejecting %u.%u.%u.%u\n",
+    s->daddr[0], s->daddr[1], s->daddr[2], s->daddr[3]);
   tcp_tx_rst(s);
   tcp_sock_close(s);
 }
