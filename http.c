@@ -179,6 +179,11 @@ void http_parse_request(struct http_client *c) {
     return;
   }
 
+  if (strlen((char *)req_method) > 7) {
+    http_system_response(c, 400, (uint8_t *)"Bad Request");
+    return;
+  }
+
   req_file = (int8_t *)strtok(NULL, " ");
   if (!req_file) {
     http_system_response(c, 400, (uint8_t *)"Bad Request");
