@@ -6,8 +6,8 @@
 #include "tcp.h"
 #include "http.h"
 
-// Set max open files to 12 (8 HTTP clients + 3 std streams + margin)
-#pragma output CLIB_OPEN_MAX = 12
+// 4 HTTP clients
+#pragma output CLIB_OPEN_MAX = 4
 
 #define ARG_ADDR "-A"
 #define ARG_PORT "-P"
