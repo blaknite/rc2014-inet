@@ -16,7 +16,6 @@ void icmp_debug(struct ip_hdr *iph) {
       printf(" id=%u seq=%u", ntohs(icmph->id), ntohs(icmph->seq));
       break;
   }
-  printf("\n");
 }
 
 void icmp_rx(struct ip_hdr *iph) {
