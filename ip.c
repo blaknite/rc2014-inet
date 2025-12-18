@@ -7,6 +7,7 @@
 #include "tcp.h"
 
 uint8_t local_address[4] = {192, 168, 1, 51};
+uint8_t gateway_address[4] = {192, 168, 1, 1};
 uint16_t packet_id = 0;
 uint8_t debug_enabled = 0;
 uint8_t debug_verbose = 0;

@@ -147,7 +147,19 @@ void tcp_tick(void) {
   uint8_t i;
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
+    if (tcp_sock_table[i].state == TCP_CLOSED) {
+      continue;
+    }
+
     tcp_sock_table[i].ticks++;
+
+    if (tcp_sock_table[i].state != TCP_ESTABLISHED) {
+      continue;
+    }
+
+    if (tcp_sock_table[i].ticks >= TCP_TIMEOUT_TICKS) {
+      tcp_sock_close(&tcp_sock_table[i]);
+    }
   }
 }
 
@@ -180,8 +192,6 @@ void tcp_rx(struct ip_hdr *iph) {
   if (csum != 0) {
     return;
   }
-
-  tcp_tick();
 
   s = tcp_sock_get(iph);
 
@@ -219,6 +229,8 @@ void tcp_rx(struct ip_hdr *iph) {
     return;
   }
 
+  s->ticks = 0;
+
   // Retransmission - already processed, drop silently
   if (s->state != TCP_LISTEN && tcph->seq < s->remote_seq) {
     return;
@@ -230,8 +242,6 @@ void tcp_rx(struct ip_hdr *iph) {
     tcp_sock_close(s);
     return;
   }
-
-  s->ticks = 0;
 
   switch (s->state) {
     case TCP_LISTEN:

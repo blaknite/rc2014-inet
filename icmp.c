@@ -4,6 +4,7 @@
 #include "slip.h"
 #include "ip.h"
 #include "icmp.h"
+#include "tcp.h"
 
 void icmp_debug(struct ip_hdr *iph) {
   struct icmp_hdr *icmph = (struct icmp_hdr *)ip_data(iph);
@@ -27,6 +28,10 @@ void icmp_rx(struct ip_hdr *iph) {
 
   switch (icmph->type) {
     case ICMP_ECHO_REQUEST:
+      if (memcmp(iph->saddr, gateway_address, 4) == 0) {
+        tcp_tick();
+      }
+
       icmp_tx_reply(iph);
       break;
 
