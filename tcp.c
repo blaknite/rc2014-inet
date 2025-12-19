@@ -145,8 +145,6 @@ void tcp_sock_close(struct tcp_sock *s) {
   if (s->close) {
     (*s->close)(s);
   }
-
-  memset(s, 0, sizeof(struct tcp_sock));
 }
 
 void tcp_tick(void) {
@@ -334,10 +332,10 @@ void tcp_rx(struct ip_hdr *iph) {
       break;
 
     case TCP_FIN_WAIT_1:
-      if (tcph->flags & (TCP_FIN|TCP_ACK)) {
+      if (tcph->flags & TCP_FIN && tcph->flags & TCP_ACK) {
         s->remote_seq++;
         tcp_tx_ack(s);
-        tcp_sock_close(s);
+        s->state = TCP_CLOSED;
       } else if (tcph->flags & TCP_FIN) {
         s->remote_seq++;
         tcp_tx_ack(s);
@@ -413,6 +411,31 @@ void tcp_tx_data(struct tcp_sock *s, uint8_t *data, uint16_t len) {
   s->local_seq += len;
 
   tcp_tx(iph);
+}
+
+void tcp_tx_data_fin(struct tcp_sock *s, uint8_t *data, uint16_t len) {
+  struct ip_hdr *iph = tcp_packet_init(s);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+  uint8_t *tcpd = tcp_data(tcph);
+
+  iph->len = iph->len + len;
+
+  tcph->flags |= TCP_ACK;
+  tcph->flags |= TCP_PSH;
+  tcph->flags |= TCP_FIN;
+
+  memcpy(tcpd, data, len);
+
+  s->local_seq += len;
+  s->local_seq++;
+
+  tcp_tx(iph);
+
+  s->state = TCP_FIN_WAIT_1;
+
+  if (s->close) {
+    (*s->close)(s);
+  }
 }
 
 void tcp_tx_ack(struct tcp_sock *s) {
