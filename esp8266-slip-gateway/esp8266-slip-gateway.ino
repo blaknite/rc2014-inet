@@ -26,7 +26,6 @@ extern "C" {
   #include "lwip/inet_chksum.h"
   #include "lwip/ip4_frag.h"
   #include "lwip/ip4.h"
-  #include "lwip/icmp.h"
 }
 
 const char* WIFI_SSID = "The LANBox - www.thelanbox.com";
@@ -130,8 +129,6 @@ void slipTxFrame(struct pbuf *p) {
   // Send SLIP_END to start frame
   Serial.write(SLIP_END);
 
-  // Encode and send each byte with inter-byte delay
-  // This prevents overwhelming the RC2014's slow character-by-character reads
   for (size_t i = 0; i < p->tot_len; i++) {
     uint8_t b = buffer[i];
     if (b == SLIP_END) {
@@ -144,7 +141,10 @@ void slipTxFrame(struct pbuf *p) {
       Serial.write(b);
     }
 
-    delayMicroseconds(500);
+    // Delay to prevent overwhelming the RC2014's slow character-by-character reads
+    if (i % 2 == 1) {
+      delay(1);
+    }
   }
 
   // Add SLIP_END to end frame
@@ -206,39 +206,6 @@ err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) 
 
 const uint32_t RX_TIMEOUT_MS = 250;
 const uint32_t WAIT_AFTER_TX_MS = 50;
-const uint32_t TICK_INTERVAL_MS = 5000;
-
-uint32_t lastTickTime = 0;
-uint16_t pingSeqNum = 0;
-
-void tick() {
-  if (!slipInitialized) return;
-
-  struct pbuf *p;
-  struct icmp_echo_hdr *iecho;
-  size_t ping_size = sizeof(struct icmp_echo_hdr);
-
-  p = pbuf_alloc(PBUF_IP, (u16_t)ping_size, PBUF_RAM);
-  if (p) {
-    iecho = (struct icmp_echo_hdr *)p->payload;
-    ICMPH_TYPE_SET(iecho, ICMP_ECHO);
-    ICMPH_CODE_SET(iecho, 0);
-    iecho->chksum = 0;
-    iecho->id = 0xAFAF;
-    iecho->seqno = htons(++pingSeqNum);
-
-    iecho->chksum = inet_chksum(iecho, ping_size);
-
-    ip4_addr_t dest;
-    IP4_ADDR(&dest, RC2014_IP[0], RC2014_IP[1], RC2014_IP[2], RC2014_IP[3]);
-
-    ip4_output_if(p, &slipNetif.ip_addr, &dest, 255, 0, IP_PROTO_ICMP, &slipNetif);
-
-    pbuf_free(p);
-  }
-
-  lastTickTime = millis();
-}
 
 void slipRx() {
   if (!slipInitialized) return;
@@ -415,11 +382,6 @@ void loop() {
   if (!currentWifiStatus) {
     delay(1000);
     return;
-  }
-
-  // The RC2014 does not have an RTC but the gateway does
-  if (millis() - lastTickTime >= TICK_INTERVAL_MS) {
-    tick();
   }
 
   slipTx();

@@ -132,7 +132,11 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
     return &tcp_sock_table[i];
   }
 
-  return tcp_sock_init(iph);
+  if (tcph->flags & TCP_SYN) {
+    return tcp_sock_init(iph);
+  }
+
+  return NULL;
 }
 
 void tcp_sock_close(struct tcp_sock *s) {
@@ -141,6 +145,8 @@ void tcp_sock_close(struct tcp_sock *s) {
   if (s->close) {
     (*s->close)(s);
   }
+
+  memset(s, 0, sizeof(struct tcp_sock));
 }
 
 void tcp_tick(void) {
@@ -153,11 +159,11 @@ void tcp_tick(void) {
 
     tcp_sock_table[i].ticks++;
 
-    if (tcp_sock_table[i].state != TCP_ESTABLISHED) {
-      continue;
-    }
-
     if (tcp_sock_table[i].ticks >= TCP_TIMEOUT_TICKS) {
+      printf(
+        "Connection timeout: %u.%u.%u.%u\n",
+        tcp_sock_table[i].daddr[0], tcp_sock_table[i].daddr[1], tcp_sock_table[i].daddr[2], tcp_sock_table[i].daddr[3]
+      );
       tcp_sock_close(&tcp_sock_table[i]);
     }
   }
@@ -188,6 +194,8 @@ void tcp_rx(struct ip_hdr *iph) {
   struct tcp_sock *s;
   uint16_t csum;
 
+  tcp_tick();
+
   csum = tcp_checksum(iph, (uint8_t *)tcph, tcp_len);
   if (csum != 0) {
     return;
@@ -204,7 +212,9 @@ void tcp_rx(struct ip_hdr *iph) {
   tcph->urp = ntohs(tcph->urp);
 
   if (tcph->flags & TCP_RST) {
-    tcp_sock_close(s);
+    if (s) {
+      tcp_sock_close(s);
+    }
     return;
   }
 
@@ -319,7 +329,7 @@ void tcp_rx(struct ip_hdr *iph) {
 
     case TCP_LAST_ACK:
       if (tcph->flags & TCP_ACK) {
-        s->state = TCP_CLOSED;
+        tcp_sock_close(s);
       }
       break;
 
@@ -327,7 +337,7 @@ void tcp_rx(struct ip_hdr *iph) {
       if (tcph->flags & (TCP_FIN|TCP_ACK)) {
         s->remote_seq++;
         tcp_tx_ack(s);
-        s->state = TCP_CLOSED;
+        tcp_sock_close(s);
       } else if (tcph->flags & TCP_FIN) {
         s->remote_seq++;
         tcp_tx_ack(s);
@@ -341,13 +351,13 @@ void tcp_rx(struct ip_hdr *iph) {
       if (tcph->flags & TCP_FIN) {
         s->remote_seq++;
         tcp_tx_ack(s);
-        s->state = TCP_CLOSED;
+        tcp_sock_close(s);
       }
       break;
 
     case TCP_CLOSING:
       if (tcph->flags & TCP_ACK) {
-        s->state = TCP_CLOSED;
+        tcp_sock_close(s);
       }
       break;
   }
