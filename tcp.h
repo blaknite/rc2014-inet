@@ -90,6 +90,7 @@ void tcp_sock_close(struct tcp_sock *s);
 void tcp_rx(struct ip_hdr *iph);
 void tcp_tx(struct ip_hdr *iph);
 void tcp_tx_data(struct tcp_sock *s, uint8_t *data, uint16_t len);
+void tcp_tx_data_fin(struct tcp_sock *s, uint8_t *data, uint16_t len);
 void tcp_tx_ack(struct tcp_sock *s);
 void tcp_tx_synack(struct tcp_sock *s);
 void tcp_tx_fin(struct tcp_sock *s);

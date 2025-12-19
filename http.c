@@ -274,14 +274,14 @@ void http_send(struct tcp_sock *s, uint16_t len) {
 
   switch (c->state) {
     case HTTP_TX_HDR:
-      tcp_tx_data(c->s, http_tx_buffer, (uint16_t)c->tx_cur);
-
       if (c->fd == -1) {
+        tcp_tx_data_fin(c->s, http_tx_buffer, (uint16_t)c->tx_cur);
         c->state = HTTP_TX_DONE;
         c->tx_cur = 0;
       } else {
+        tcp_tx_data(c->s, http_tx_buffer, (uint16_t)c->tx_cur);
         c->state = HTTP_TX_BODY;
-        c->tx_cur = 0;  // Reset for body transfer
+        c->tx_cur = 0;
       }
       break;
 
@@ -295,25 +295,27 @@ void http_send(struct tcp_sock *s, uint16_t len) {
       len = read(c->fd, http_tx_buffer, len);
 
       if (len > 0) {
-        tcp_tx_data(c->s, http_tx_buffer, len);
         c->tx_cur += len;
 
-        // Check if we've sent everything
         if (c->tx_cur >= c->tx_len) {
+          tcp_tx_data_fin(c->s, http_tx_buffer, len);
           close(c->fd);
           c->fd = -1;
           c->state = HTTP_TX_DONE;
+        } else {
+          tcp_tx_data(c->s, http_tx_buffer, len);
         }
       } else {
-        // EOF or error - close the file and mark as done
+        // EOF or read error - abort the connection
         close(c->fd);
         c->fd = -1;
-        c->state = HTTP_TX_DONE;
+        tcp_tx_rst(c->s);
+        tcp_sock_close(c->s);
       }
       break;
 
     case HTTP_TX_DONE:
-      tcp_close(c->s);
+      // nothing to do, connection already closed
       break;
   }
 }
