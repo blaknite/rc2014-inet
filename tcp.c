@@ -285,16 +285,12 @@ void tcp_rx(struct ip_hdr *iph) {
     case TCP_ESTABLISHED:
       s->remote_seq += tcpd_len;
 
-      if (tcpd_len > 0) {
-        tcp_tx_ack(s);
-
-        if (s->recv) {
-          (*s->recv)(s, tcpd, tcpd_len);
-        }
-      }
-
       if (tcph->flags & TCP_FIN) {
         s->remote_seq++;
+
+        if (tcpd_len > 0 && s->recv) {
+          (*s->recv)(s, tcpd, tcpd_len);
+        }
 
         tcp_tx_fin(s);
 
@@ -304,8 +300,20 @@ void tcp_rx(struct ip_hdr *iph) {
         if (s->close) {
           (*s->close)(s);
         }
-      } else if (s->send) {
-        (*s->send)(s, tcph->win);
+      } else if (tcpd_len > 0) {
+        if (s->recv) {
+          (*s->recv)(s, tcpd, tcpd_len);
+        }
+
+        if (s->send) {
+          (*s->send)(s, tcph->win);
+        } else {
+          tcp_tx_ack(s);
+        }
+      } else if (tcph->flags & TCP_ACK) {
+        if (s->send) {
+          (*s->send)(s, tcph->win);
+        }
       }
       break;
 
