@@ -209,6 +209,7 @@ void tcp_rx(struct ip_hdr *iph) {
   tcph->csum = ntohs(tcph->csum);
   tcph->urp = ntohs(tcph->urp);
 
+  // We got asked to close, so do it
   if (tcph->flags & TCP_RST) {
     if (s) {
       tcp_sock_close(s);
@@ -216,24 +217,9 @@ void tcp_rx(struct ip_hdr *iph) {
     return;
   }
 
+  // No socket, reject with RST
   if (!s) {
-    struct tcp_sock temp_sock;
-    memset(&temp_sock, 0, sizeof(struct tcp_sock));
-
-    temp_sock.sport = tcph->dport;
-    temp_sock.dport = tcph->sport;
-    temp_sock.local_seq = tcph->ack_seq;
-    temp_sock.remote_seq = tcph->seq + tcpd_len;
-
-    if (tcph->flags & TCP_FIN) {
-      temp_sock.remote_seq++;
-    }
-
-    memcpy(temp_sock.saddr, iph->daddr, 4);
-    memcpy(temp_sock.daddr, iph->saddr, 4);
-
-    tcp_tx_rst(&temp_sock);
-
+    tcp_reject(iph);
     return;
   }
 
@@ -472,6 +458,31 @@ void tcp_tx_rst(struct tcp_sock *s) {
   struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
 
   tcph->flags |= TCP_RST;
+
+  tcp_tx(iph);
+}
+
+void tcp_reject(struct ip_hdr *in_iph) {
+  struct tcp_hdr *in_tcph = (struct tcp_hdr *)ip_data(in_iph);
+  uint16_t tcpd_len = tcp_data_len(in_iph, in_tcph);
+  struct ip_hdr *iph = ip_hdr_init();
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+
+  iph->len = 20 + 20;
+  iph->proto = TCP;
+  memcpy(iph->daddr, in_iph->saddr, 4);
+
+  tcph->sport = in_tcph->dport;
+  tcph->dport = in_tcph->sport;
+  tcph->seq = in_tcph->ack_seq;
+  tcph->ack_seq = in_tcph->seq + tcpd_len;
+  tcph->offset_reserved = (5 << 4);
+  tcph->win = TCP_PACKET_LEN;
+  tcph->flags |= TCP_RST;
+
+  if (in_tcph->flags & TCP_FIN) {
+    tcph->ack_seq++;
+  }
 
   tcp_tx(iph);
 }

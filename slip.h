@@ -9,7 +9,17 @@
 #define SLIP_ESC_END 0xdc
 #define SLIP_ESC_ESC 0xdd
 
+// #define BIOS_SERB_BUF 0xFF83
+// #define BIOS_SERB_BUFUSED 0xFFBE
+// #define BIOS_SERB_RDPTR 0xFFBF
+// #define BIOS_SERB_BUFSIZE 60
+
+#define SLIP_DECODE_OK 0
+#define SLIP_DECODE_DONE 1
+#define SLIP_DECODE_RST 2
+
 #define slip_buffer_alloc() (calloc(SLIP_MAX, 1))
+// #define slip_rx_ready() (*(uint8_t *)BIOS_SERB_BUFUSED > 0)
 
 typedef struct {
   uint8_t *buffer;
@@ -22,8 +32,6 @@ extern uint8_t *slip_tx_buffer;
 extern slip_decoder_t slip_decoder;
 
 void slip_init(void);
-void slip_decoder_reset(void);
-uint8_t slip_process_byte(uint8_t b);
 void slip_rx(void);
 void slip_tx(uint8_t *buffer, uint16_t len);
 
