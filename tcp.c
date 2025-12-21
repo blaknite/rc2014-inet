@@ -16,7 +16,6 @@ void tcp_init(void) {
 
 void tcp_debug(struct ip_hdr *iph) {
   struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
-  uint8_t *raw = (uint8_t *)tcph;
 
   printf(" sport=%u dport=%u flags=%x", ntohs(tcph->sport), ntohs(tcph->dport), tcph->flags);
 }
