@@ -18,6 +18,19 @@ uint8_t *text_types[] = { "htm", "txt", NULL };
 
 uint8_t *http_tx_buffer;
 
+const char *http_system_response_fmt = "\
+HTTP/1.0 %u %s\r\n\
+Content-Type: text/html\r\n\
+Content-Length: %u\r\n\
+\r\n\
+%u %s\r\n";
+
+const char *http_response_fmt = "\
+HTTP/1.0 200 OK\r\n\
+Content-Type: %s\r\n\
+Content-Length: %lu\r\n\
+\r\n";
+
 void http_init(void) {
   http_client_table = calloc(HTTP_MAX_CLIENTS, sizeof(struct http_client));
   http_tx_buffer = malloc(TCP_PACKET_LEN);
@@ -42,16 +55,9 @@ void http_log(struct http_client *c, uint16_t code) {
 }
 
 void http_system_response(struct http_client *c, uint16_t code, uint8_t *message) {
-  uint8_t *ptr;
+  sprintf((char *)http_tx_buffer, http_system_response_fmt, code, (char *)message, 4 + strlen((char *)message) + 2, code, (char *)message);
 
-  ptr = &http_tx_buffer[0];
-  ptr += sprintf((char *)ptr, "HTTP/1.0 %u %s\r\n", code, (char *)message);
-  ptr += sprintf((char *)ptr, "Content-Type: text/html\r\n");
-  ptr += sprintf((char *)ptr, "Content-Length: %u\r\n", 4 + strlen((char *)message) + 2);
-  ptr += sprintf((char *)ptr, "\r\n");
-  ptr += sprintf((char *)ptr, "%u %s\r\n", code, (char *)message);
-
-  c->tx_cur = ptr - http_tx_buffer;  // Store response length
+  c->tx_cur = strlen((char *)http_tx_buffer);
 
   http_log(c, code);
 
@@ -129,8 +135,6 @@ uint32_t http_content_length(struct http_client *c, int16_t fd) {
 }
 
 void http_response(struct http_client *c) {
-  uint8_t *ptr;
-
   c->file_mode = http_file_mode(c);
 
   c->fd = http_file_open(c);
@@ -139,13 +143,9 @@ void http_response(struct http_client *c) {
     c->tx_len = http_content_length(c, c->fd);
     c->tx_cur = 0;
 
-    ptr = &http_tx_buffer[0];
-    ptr += sprintf((char *)ptr, "HTTP/1.0 200 OK\r\n");
-    ptr += sprintf((char *)ptr, "Content-Type: %s\r\n", (char *)http_content_type(c));
-    ptr += sprintf((char *)ptr, "Content-Length: %lu\r\n", c->tx_len);
-    ptr += sprintf((char *)ptr, "\r\n");
+    sprintf((char *)http_tx_buffer, http_response_fmt, (char *)http_content_type(c), c->tx_len);
 
-    c->tx_cur = ptr - http_tx_buffer;  // Store header length
+    c->tx_cur = strlen((char *)http_tx_buffer);
 
     http_log(c, 200);
 
