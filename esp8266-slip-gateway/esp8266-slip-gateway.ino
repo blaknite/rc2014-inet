@@ -45,8 +45,9 @@ const int LED_ACTIVITY = 4;
 #define SLIP_ESC_ESC 0xDD
 
 #define SLIP_DECODE_OK   1
-#define SLIP_DECODE_DONE 2
-#define SLIP_DECODE_RST  3
+#define SLIP_DECODE_SKIP 2
+#define SLIP_DECODE_DONE 3
+#define SLIP_DECODE_RST  4
 
 const size_t SLIP_MTU = 576;
 const size_t SLIP_MAX_PACKET = 1154;
@@ -71,7 +72,7 @@ struct SlipDecoder {
         return SLIP_DECODE_DONE;
       }
 
-      return SLIP_DECODE_RST;
+      return SLIP_DECODE_SKIP;
     }
 
     if (b == SLIP_ESC) {
@@ -250,22 +251,28 @@ void slipRx() {
 
       if (status == SLIP_DECODE_DONE) {
         slipRxPacket(slipDecoder.buffer, slipDecoder.length);
-        break;
+        slipDecoder.reset();
+        digitalWrite(LED_ACTIVITY, LOW);
+        return;
+      } else if (status == SLIP_DECODE_SKIP) {
+        continue;
       } else if (status == SLIP_DECODE_RST) {
-        break;
+        slipDecoder.reset();
+        return;
       }
     } else {
-      if (slipDecoder.length > 0 && millis() - startTime > RX_TIMEOUT_MS) {
-        break;
+      if (status == SLIP_DECODE_SKIP) {
+        digitalWrite(LED_ACTIVITY, LOW);
+        return;
+      } else if (slipDecoder.length > 0 && millis() - startTime > RX_TIMEOUT_MS) {
+        slipDecoder.reset();
+        digitalWrite(LED_ACTIVITY, LOW);
+        return;
       }
 
       yield();
     }
   }
-
-  slipDecoder.reset();
-
-  digitalWrite(LED_ACTIVITY, LOW);
 }
 
 err_t slipNetifInit(struct netif *netif) {
