@@ -62,7 +62,7 @@ void http_log(struct http_client *c, uint16_t code) {
 }
 
 void http_system_response(struct http_client *c, uint16_t code, char *message) {
-  sprintf((char *)http_tx_buffer, http_system_response_fmt, code, (char *)message, 4 + strlen((char *)message) + 2, code, (char *)message);
+  sprintf((char *)http_tx_buffer, http_system_response_fmt, code, message, 4 + strlen(message) + 2, code, message);
 
   c->tx_cur = strlen((char *)http_tx_buffer);
 
@@ -113,9 +113,9 @@ uint8_t http_file_mode(struct http_client *c) {
 
 int16_t http_file_open(struct http_client *c) {
   if (c->file_mode == HTTP_FILE_MODE_TEXT) {
-    return open((char *)&c->req_file[1], O_RDONLY, _IOTEXT);
+    return open(&c->req_file[1], O_RDONLY, _IOTEXT);
   } else {
-    return open((char *)&c->req_file[1], O_RDONLY, 0);
+    return open(&c->req_file[1], O_RDONLY, 0);
   }
 }
 
@@ -148,23 +148,20 @@ void http_response(struct http_client *c) {
 
   if (c->fd >= 0) {
     c->tx_len = http_content_length(c, c->fd);
-    c->tx_cur = 0;
 
-    sprintf((char *)http_tx_buffer, http_response_fmt, (char *)http_content_type(c), c->tx_len);
-
-    c->tx_cur = strlen((char *)http_tx_buffer);
+    sprintf((char *)http_tx_buffer, http_response_fmt, http_content_type(c), c->tx_len);
 
     http_log(c, 200);
 
     // For HEAD requests, close file since we won't send the body
-    if (strncmp((char *)c->req_method, "HEAD", 4) == 0) {
+    if (strncmp(c->req_method, "HEAD", 4) == 0) {
       close(c->fd);
       c->fd = -1;
     }
 
     c->state = HTTP_TX_HDR;
   } else {
-    http_system_response(c, 404, (char *)"Not Found");
+    http_system_response(c, 404, "Not Found");
   }
 }
 
@@ -176,7 +173,7 @@ void http_parse_request(struct http_client *c) {
     return;
   }
 
-  if (strncmp((char *)&c->rx_buff[c->rx_cur - 4], "\r\n\r\n", 4) != 0) {
+  if (strncmp(&c->rx_buff[c->rx_cur - 4], "\r\n\r\n", 4) != 0) {
     return;
   }
 
@@ -261,7 +258,7 @@ void http_recv(struct tcp_sock *s, uint8_t *data, uint16_t len) {
   }
 
   if (c->rx_cur + len > HTTP_RX_LEN) {
-    http_system_response(c, 431, (char *)"Request Header Fields Too Large");
+    http_system_response(c, 431, "Request Header Fields Too Large");
     return;
   }
 
@@ -281,14 +278,11 @@ void http_send(struct tcp_sock *s, uint16_t len) {
 
   switch (c->state) {
     case HTTP_TX_HDR:
-      if (c->fd == -1) {
-        tcp_tx_data_fin(c->s, http_tx_buffer, (uint16_t)c->tx_cur);
-        c->state = HTTP_TX_DONE;
-        c->tx_cur = 0;
+      if (strncmp(c->req_method, "HEAD", 4) == 0) {
+        tcp_tx_data_fin(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
       } else {
-        tcp_tx_data(c->s, http_tx_buffer, (uint16_t)c->tx_cur);
+        tcp_tx_data(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
         c->state = HTTP_TX_BODY;
-        c->tx_cur = 0;
       }
       break;
 
@@ -307,22 +301,15 @@ void http_send(struct tcp_sock *s, uint16_t len) {
         if (c->tx_cur >= c->tx_len) {
           tcp_tx_data_fin(c->s, http_tx_buffer, len);
           close(c->fd);
-          c->fd = -1;
-          c->state = HTTP_TX_DONE;
         } else {
           tcp_tx_data(c->s, http_tx_buffer, len);
         }
       } else {
         // EOF or read error - abort the connection
         close(c->fd);
-        c->fd = -1;
         tcp_tx_rst(c->s);
         tcp_sock_close(c->s);
       }
-      break;
-
-    case HTTP_TX_DONE:
-      // nothing to do, connection already closed
       break;
   }
 }
@@ -339,5 +326,4 @@ void http_close(struct tcp_sock *s) {
   }
 
   memset(c, 0, sizeof(struct http_client));
-  c->fd = -1;
 }
