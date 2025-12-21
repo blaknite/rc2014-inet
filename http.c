@@ -9,12 +9,19 @@ struct http_client *http_client_table;
 char *mime_types[] = {
   "htm", "text/html",
   "txt", "text/plain",
-  "png", "image/png",
+  "css", "text/css",
+  "js", "text/javascript",
+  "jsn", "application/json",
+  "xml", "text/xml",
   "jpg", "image/jpeg",
+  "png", "image/png",
+  "gif", "image/gif",
+  "ico", "image/x-icon",
+  "svg", "image/svg+xml",
   NULL
 };
 
-char *text_types[] = { "htm", "txt", NULL };
+char *text_types[] = { "htm", "txt", "css", "js", "jsn", "xml", "svg", NULL };
 
 uint8_t *http_tx_buffer;
 
