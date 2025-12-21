@@ -44,6 +44,10 @@ const int LED_ACTIVITY = 4;
 #define SLIP_ESC_END 0xDC
 #define SLIP_ESC_ESC 0xDD
 
+#define SLIP_DECODE_OK   1
+#define SLIP_DECODE_DONE 2
+#define SLIP_DECODE_RST  3
+
 const size_t SLIP_MTU = 576;
 const size_t SLIP_MAX_PACKET = 1154;
 
@@ -59,20 +63,20 @@ struct SlipDecoder {
     lastRxTime = 0;
   }
 
-  bool processByte(uint8_t b) {
+  uint8_t decode(uint8_t b) {
     lastRxTime = millis();
 
     if (b == SLIP_END) {
-      if (length > 0) return true;
+      if (length > 0) {
+        return SLIP_DECODE_DONE;
+      }
 
-      reset();
-
-      return false;
+      return SLIP_DECODE_RST;
     }
 
     if (b == SLIP_ESC) {
       escaped = true;
-      return false;
+      return SLIP_DECODE_OK;
     }
 
     if (escaped) {
@@ -84,12 +88,11 @@ struct SlipDecoder {
 
     buffer[length++] = b;
 
-    // Buffer overflow - discard packet
     if (length > SLIP_MAX_PACKET) {
-      reset();
+      return SLIP_DECODE_RST;
     }
 
-    return false;
+    return SLIP_DECODE_OK;
   }
 
   bool checkTimeout(uint32_t timeoutMs) {
@@ -99,10 +102,6 @@ struct SlipDecoder {
     }
     return false;
   }
-
-  bool isReceiving() {
-    return length > 0;
-  }
 };
 
 struct netif slipNetif;
@@ -111,7 +110,7 @@ bool slipInitialized = false;
 uint32_t lastTxTime = 0;
 
 // Flow control - packet queue
-const uint8_t TX_QUEUE_SIZE = 16;
+const uint8_t TX_QUEUE_SIZE = 32;
 struct pbuf* txQueue[TX_QUEUE_SIZE];
 uint8_t txQueueHead = 0;
 uint8_t txQueueTail = 0;
@@ -142,7 +141,7 @@ void slipTxFrame(struct pbuf *p) {
     }
 
     // Delay to prevent overwhelming the RC2014's slow character-by-character reads
-    if (i % 2 == 1) {
+    if (i % 3 == 1) {
       delay(1);
     }
   }
@@ -207,56 +206,64 @@ err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) 
 const uint32_t RX_TIMEOUT_MS = 250;
 const uint32_t WAIT_AFTER_TX_MS = 50;
 
+void slipRxPacket(uint8_t* buffer, size_t length) {
+  if (length < 20 || length > SLIP_MTU) return;
+
+  uint8_t version = (buffer[0] >> 4) & 0x0F;
+  uint8_t headerLen = (buffer[0] & 0x0F) * 4;
+
+  if (version != 4 || headerLen < 20 || headerLen > length) return;
+
+  struct pbuf* p = pbuf_alloc(PBUF_IP, length, PBUF_RAM);
+  if (!p) return;
+
+  memcpy(p->payload, buffer, length);
+
+  if (slipNetif.input(p, &slipNetif) != ERR_OK) {
+    pbuf_free(p);
+  }
+}
+
 void slipRx() {
   if (!slipInitialized) return;
 
-  static uint8_t processBuffer[SLIP_MAX_PACKET];
-
-  if (!Serial.available()) {
+  while (!Serial.available()) {
     if (lastTxTime > 0 && millis() - lastTxTime < WAIT_AFTER_TX_MS) {
-      delay(1);
+      yield();
+    } else {
+      return;
     }
-    return;
   }
 
   digitalWrite(LED_ACTIVITY, HIGH);
 
+  uint8_t c;
+  uint8_t status;
+  uint32_t startTime = millis();
+
   while (true) {
-    if (slipDecoder.checkTimeout(RX_TIMEOUT_MS)) break;
+    if (Serial.available()) {
+      startTime = millis();
 
-    if (!Serial.available()) {
-      delay(1);
-      continue;
+      c = Serial.read();
+      status = slipDecoder.decode(c);
+
+      if (status == SLIP_DECODE_DONE) {
+        slipRxPacket(slipDecoder.buffer, slipDecoder.length);
+        break;
+      } else if (status == SLIP_DECODE_RST) {
+        break;
+      }
+    } else {
+      if (slipDecoder.length > 0 && millis() - startTime > RX_TIMEOUT_MS) {
+        break;
+      }
+
+      yield();
     }
-
-    uint8_t b = Serial.read();
-    bool packetComplete = slipDecoder.processByte(b);
-
-    if (!packetComplete) continue;
-
-    size_t packetLen = slipDecoder.length;
-    slipDecoder.reset();
-
-    if (packetLen < 20 || packetLen > SLIP_MTU) break;
-
-    memcpy(processBuffer, slipDecoder.buffer, packetLen);
-
-    uint8_t version = (processBuffer[0] >> 4) & 0x0F;
-    uint8_t headerLen = (processBuffer[0] & 0x0F) * 4;
-
-    if (version != 4 || headerLen < 20 || headerLen > packetLen) break;
-
-    struct pbuf* p = pbuf_alloc(PBUF_IP, packetLen, PBUF_RAM);
-    if (!p) break;
-
-    memcpy(p->payload, processBuffer, packetLen);
-
-    if (slipNetif.input(p, &slipNetif) != ERR_OK) {
-      pbuf_free(p);
-    }
-
-    break;
   }
+
+  slipDecoder.reset();
 
   digitalWrite(LED_ACTIVITY, LOW);
 }

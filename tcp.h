@@ -95,6 +95,7 @@ void tcp_tx_ack(struct tcp_sock *s);
 void tcp_tx_synack(struct tcp_sock *s);
 void tcp_tx_fin(struct tcp_sock *s);
 void tcp_tx_rst(struct tcp_sock *s);
+void tcp_reject(struct ip_hdr *in_iph);
 void tcp_close(struct tcp_sock *s);
 void tcp_listen(
   uint16_t port,

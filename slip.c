@@ -22,51 +22,53 @@ void slip_reset(void) {
   slip_decoder.escaped = 0;
 }
 
-uint8_t slip_rx_byte(uint8_t b) {
+uint8_t slip_rx_decode(uint8_t b) {
   if (b == SLIP_END) {
     if (slip_decoder.length > 0) {
-      return 1; // Packet complete
+      return SLIP_DECODE_DONE;
     }
 
-    slip_reset();
-
-    return 0;
+    return SLIP_DECODE_RST;
   }
 
   if (b == SLIP_ESC) {
     slip_decoder.escaped = 1;
-    return 0;
+    return SLIP_DECODE_OK;
   }
 
   if (slip_decoder.escaped) {
-    if (b == SLIP_ESC_END) b = SLIP_END;
-    if (b == SLIP_ESC_ESC) b = SLIP_ESC;
+    if (b == SLIP_ESC_END) {
+      b = SLIP_END;
+    } else if (b == SLIP_ESC_ESC) {
+      b = SLIP_ESC;
+    }
 
     slip_decoder.escaped = 0;
   }
 
   slip_decoder.buffer[slip_decoder.length++] = b;
 
-  // Buffer overflow - discard packet
   if (slip_decoder.length >= SLIP_MAX) {
-    printf("SLIP frame too large: >= %u bytes, discarding\n", SLIP_MAX);
-    slip_reset();
+    return SLIP_DECODE_RST;
   }
 
-  return 0;
+  return SLIP_DECODE_OK;
 }
 
 void slip_rx(void) {
   uint8_t c;
+  uint8_t status;
 
   while (1) {
     c = bdos(CPM_RRDR, 0);
+    status = slip_rx_decode(c);
 
-    if (slip_rx_byte(c)) {
+    if (status == SLIP_DECODE_DONE) {
       ip_rx((struct ip_hdr *)slip_decoder.buffer);
       slip_reset();
-
       return;
+    } else if (status == SLIP_DECODE_RST) {
+      slip_reset();
     }
   }
 }
