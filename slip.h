@@ -15,8 +15,9 @@
 // #define BIOS_SERB_BUFSIZE 60
 
 #define SLIP_DECODE_OK 0
-#define SLIP_DECODE_DONE 1
-#define SLIP_DECODE_RST 2
+#define SLIP_DECODE_SKIP 1
+#define SLIP_DECODE_DONE 2
+#define SLIP_DECODE_RST 3
 
 #define slip_buffer_alloc() (calloc(SLIP_MAX, 1))
 // #define slip_rx_ready() (*(uint8_t *)BIOS_SERB_BUFUSED > 0)

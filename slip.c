@@ -29,7 +29,7 @@ uint8_t slip_rx_decode(uint8_t b) {
       return SLIP_DECODE_DONE;
     }
 
-    return SLIP_DECODE_RST;
+    return SLIP_DECODE_SKIP;
   }
 
   if (b == SLIP_ESC) {
