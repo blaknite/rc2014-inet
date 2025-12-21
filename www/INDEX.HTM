@@ -45,7 +45,7 @@
         <h2 class="h2">How It Works</h2>
         <p>
           The RC2014 is connected to the internet through a WiFi-to-SLIP gateway and a
-          TCP/IP stack running natively on CP/M.
+          TCP/IP stack running natively on CP/M. This provides stand-alone connectivity.
         </p>
 
         <h3 class="h3">RC2014 WiFi SLIP Gateway</h3>
@@ -54,8 +54,6 @@
           SIO port 2. The <a href="https://rc2014.co.uk/modules/esp8266-wifi-module/">RC2014
           ESP8266 WiFi Module</a> handles WiFi connectivity and protocol translation,
           forwarding packets between the RC2014's serial interface and the network.
-          SLIP encodes IP packets using special byte sequences (0xC0 for frame boundaries,
-          0xDB for escape sequences) enabling reliable packet transmission over serial.
         </p>
 
         <h3 class="h3">RC2014 CP/M TCP/IP Stack</h3>
