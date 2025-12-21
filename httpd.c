@@ -15,8 +15,8 @@
 
 int main(int argc, char *argv[]) {
   uint8_t i;
-  int8_t *key;
-  int8_t *value;
+  char *key;
+  char *value;
   uint16_t port = 80;
   uint8_t debug = 0;
   uint8_t verbose = 0;

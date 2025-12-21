@@ -6,7 +6,7 @@
 
 struct http_client *http_client_table;
 
-uint8_t *mime_types[] = {
+char *mime_types[] = {
   "htm", "text/html",
   "txt", "text/plain",
   "png", "image/png",
@@ -14,7 +14,7 @@ uint8_t *mime_types[] = {
   NULL
 };
 
-uint8_t *text_types[] = { "htm", "txt", NULL };
+char *text_types[] = { "htm", "txt", NULL };
 
 uint8_t *http_tx_buffer;
 
@@ -54,7 +54,7 @@ void http_log(struct http_client *c, uint16_t code) {
     c->req_method, c->req_file, code);
 }
 
-void http_system_response(struct http_client *c, uint16_t code, uint8_t *message) {
+void http_system_response(struct http_client *c, uint16_t code, char *message) {
   sprintf((char *)http_tx_buffer, http_system_response_fmt, code, (char *)message, 4 + strlen((char *)message) + 2, code, (char *)message);
 
   c->tx_cur = strlen((char *)http_tx_buffer);
@@ -64,39 +64,39 @@ void http_system_response(struct http_client *c, uint16_t code, uint8_t *message
   c->state = HTTP_TX_HDR;
 }
 
-uint8_t *http_content_type(struct http_client *c) {
-  uint8_t ext[4];
+char *http_content_type(struct http_client *c) {
+  char ext[4];
   uint8_t i;
-  uint16_t len = strlen((char *)c->req_file);
+  uint16_t len = strlen(c->req_file);
 
   if (len < 4) {
-    return (uint8_t *)"application/octet-stream";
+    return "application/octet-stream";
   }
 
-  strncpy((char *)ext, (char *)&c->req_file[len - 3], 4);
+  strncpy(ext, &c->req_file[len - 3], 4);
 
   for (i = 0; mime_types[i]; i += 2) {
-    if (strcasecmp((char *)ext, (char *)mime_types[i]) == 0) {
+    if (strcasecmp(ext, mime_types[i]) == 0) {
       return mime_types[i + 1];
     }
   }
 
-  return (uint8_t *)"application/octet-stream";
+  return "application/octet-stream";
 }
 
 uint8_t http_file_mode(struct http_client *c) {
-  uint8_t ext[4];
+  char ext[4];
   uint8_t i;
-  uint16_t len = strlen((char *)c->req_file);
+  uint16_t len = strlen(c->req_file);
 
   if (len < 4) {
     return HTTP_FILE_MODE_BINARY;
   }
 
-  strncpy((char *)ext, (char *)&c->req_file[len - 3], 4);
+  strncpy(ext, &c->req_file[len - 3], 4);
 
   for (i = 0; text_types[i]; i++) {
-    if (strcasecmp((char *)ext, (char *)text_types[i]) == 0) {
+    if (strcasecmp(ext, text_types[i]) == 0) {
       return HTTP_FILE_MODE_TEXT;
     }
   }
@@ -157,13 +157,13 @@ void http_response(struct http_client *c) {
 
     c->state = HTTP_TX_HDR;
   } else {
-    http_system_response(c, 404, (uint8_t *)"Not Found");
+    http_system_response(c, 404, (char *)"Not Found");
   }
 }
 
 void http_parse_request(struct http_client *c) {
-  int8_t *req_method;
-  int8_t *req_file;
+  char *req_method;
+  char *req_file;
 
   if (c->rx_cur < 9) {
     return;
@@ -173,50 +173,50 @@ void http_parse_request(struct http_client *c) {
     return;
   }
 
-  req_method = (int8_t *)strtok((char *)c->rx_buff, " ");
+  req_method = strtok(c->rx_buff, " ");
   if (!req_method) {
-    http_system_response(c, 400, (uint8_t *)"Bad Request");
+    http_system_response(c, 400, "Bad Request");
     return;
   }
 
-  if (strlen((char *)req_method) > 7) {
-    http_system_response(c, 400, (uint8_t *)"Bad Request");
+  if (strlen(req_method) > 7) {
+    http_system_response(c, 400, "Bad Request");
     return;
   }
 
-  req_file = (int8_t *)strtok(NULL, " ");
+  req_file = strtok(NULL, " ");
   if (!req_file) {
-    http_system_response(c, 400, (uint8_t *)"Bad Request");
+    http_system_response(c, 400, "Bad Request");
     return;
   }
 
-  if (strlen((char *)req_file) >= 14) {
-    http_system_response(c, 414, (uint8_t *)"URI Too Long");
+  if (strlen(req_file) >= 14) {
+    http_system_response(c, 414, "URI Too Long");
     return;
   }
 
   if (req_file[0] != '/') {
-    http_system_response(c, 400, (uint8_t *)"Bad Request");
+    http_system_response(c, 400, "Bad Request");
     return;
   }
 
-  if (strchr((char *)req_file, ':')) {
-    http_system_response(c, 400, (uint8_t *)"Bad Request");
+  if (strchr(req_file, ':')) {
+    http_system_response(c, 400, "Bad Request");
     return;
   }
 
-  strcpy((char *)c->req_method, (char *)req_method);
+  strcpy(c->req_method, req_method);
 
-  if (strlen((char *)req_file) == 1) {
-    strcpy((char *)c->req_file, "/INDEX.HTM");
+  if (strlen(req_file) == 1) {
+    strcpy(c->req_file, "/INDEX.HTM");
   } else {
-    strcpy((char *)c->req_file, (char *)req_file);
+    strcpy(c->req_file, req_file);
   }
 
-  if (strncmp((char *)c->req_method, "GET", 3) == 0 || strncmp((char *)c->req_method, "HEAD", 4) == 0) {
+  if (strncmp(c->req_method, "GET", 3) == 0 || strncmp(c->req_method, "HEAD", 4) == 0) {
     http_response(c);
   } else {
-    http_system_response(c, 404, (uint8_t *)"Not Found");
+    http_system_response(c, 404, "Not Found");
   }
 }
 
@@ -254,7 +254,7 @@ void http_recv(struct tcp_sock *s, uint8_t *data, uint16_t len) {
   }
 
   if (c->rx_cur + len > HTTP_RX_LEN) {
-    http_system_response(c, 431, (uint8_t *)"Request Header Fields Too Large");
+    http_system_response(c, 431, (char *)"Request Header Fields Too Large");
     return;
   }
 
