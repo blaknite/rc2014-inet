@@ -15,10 +15,10 @@
 struct http_client {
   struct tcp_sock *s;
   uint8_t state;
-  uint8_t rx_buff[HTTP_RX_LEN];
+  char rx_buff[HTTP_RX_LEN];
   uint16_t rx_cur;
-  uint8_t req_method[8];
-  uint8_t req_file[15];
+  char req_method[8];
+  char req_file[15];
   uint8_t file_mode;
   uint32_t tx_len;
   uint32_t tx_cur;
@@ -28,8 +28,8 @@ struct http_client {
 void http_init(void);
 struct http_client *http_get_client(struct tcp_sock *s);
 void http_log(struct http_client *c, uint16_t code);
-void http_system_response(struct http_client *c, uint16_t code, uint8_t *message);
-uint8_t *http_content_type(struct http_client *c);
+void http_system_response(struct http_client *c, uint16_t code, char *message);
+char *http_content_type(struct http_client *c);
 uint8_t http_file_mode(struct http_client *c);
 int16_t http_file_open(struct http_client *c);
 uint32_t http_content_length(struct http_client *c, int16_t fd);
