@@ -7,6 +7,7 @@
 uint8_t *slip_rx_buffer;
 uint8_t *slip_tx_buffer;
 slip_decoder_t slip_decoder;
+uint8_t slip_tx_sent;
 
 void slip_init(void) {
   slip_rx_buffer = slip_buffer_alloc();
@@ -64,8 +65,16 @@ void slip_rx(void) {
     status = slip_rx_decode(c);
 
     if (status == SLIP_DECODE_DONE) {
+      slip_tx_sent = 0;
+
       ip_rx((struct ip_hdr *)slip_decoder.buffer);
+
+      if (!slip_tx_sent) {
+        slip_tx(NULL, 0);
+      }
+
       slip_reset();
+
       return;
     } else if (status == SLIP_DECODE_RST) {
       slip_reset();
@@ -75,6 +84,8 @@ void slip_rx(void) {
 
 void slip_tx(uint8_t *buffer, uint16_t len) {
   uint16_t i;
+
+  slip_tx_sent = 1;
 
   bdos(CPM_WPUN, SLIP_END);
 
