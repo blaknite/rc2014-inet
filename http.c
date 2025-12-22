@@ -226,24 +226,31 @@ void http_parse_request(struct http_client *c) {
 
 void http_open(struct tcp_sock *s) {
   uint8_t i;
+  struct http_client *c = &http_client_table[0];
 
   for (i = 0; i < HTTP_MAX_CLIENTS; i++) {
     if (!http_client_table[i].s) {
-      memset(&http_client_table[i], 0, sizeof(struct http_client));
+      c = &http_client_table[i];
+      break;
+    }
 
-      http_client_table[i].s = s;
-      http_client_table[i].state = HTTP_RX_REQ;
-      http_client_table[i].fd = -1;
-
-      return;
+    if (http_client_table[i].s->ticks > c->s->ticks) {
+      c = &http_client_table[i];
     }
   }
 
-  // No free HTTP client - reject the connection
-  printf("ERROR: Client limit reached, rejecting %u.%u.%u.%u\n",
-    s->daddr[0], s->daddr[1], s->daddr[2], s->daddr[3]);
-  tcp_tx_rst(s);
-  tcp_sock_close(s);
+  if (c->s) {
+    printf("Client limit reached: evicting %u.%u.%u.%u\n",
+      c->s->daddr[0], c->s->daddr[1], c->s->daddr[2], c->s->daddr[3]);
+
+    tcp_sock_close(c->s);
+  }
+
+  memset(c, 0, sizeof(struct http_client));
+
+  c->s = s;
+  c->state = HTTP_RX_REQ;
+  c->fd = -1;
 }
 
 void http_recv(struct tcp_sock *s, uint8_t *data, uint16_t len) {
@@ -278,11 +285,12 @@ void http_send(struct tcp_sock *s, uint16_t len) {
 
   switch (c->state) {
     case HTTP_TX_HDR:
-      if (strncmp(c->req_method, "HEAD", 4) == 0) {
+      if (c->fd < 0) {
         tcp_tx_data_fin(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
       } else {
         tcp_tx_data(c->s, http_tx_buffer, strlen((char *)http_tx_buffer));
         c->state = HTTP_TX_BODY;
+        c->tx_cur = 0;
       }
       break;
 
@@ -301,12 +309,14 @@ void http_send(struct tcp_sock *s, uint16_t len) {
         if (c->tx_cur >= c->tx_len) {
           tcp_tx_data_fin(c->s, http_tx_buffer, len);
           close(c->fd);
+          c->fd = -1;
         } else {
           tcp_tx_data(c->s, http_tx_buffer, len);
         }
       } else {
         // EOF or read error - abort the connection
         close(c->fd);
+        c->fd = -1;
         tcp_tx_rst(c->s);
         tcp_sock_close(c->s);
       }
