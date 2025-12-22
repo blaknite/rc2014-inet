@@ -146,7 +146,7 @@ void slipTxFrame(struct pbuf *p) {
     // Delay to prevent overwhelming the RC2014's slow character-by-character reads.
     // RC2014 C/PM has a 60-byte buffer so we can burst the first 40 bytes
     // which is enough to cover SYN, SYN-ACK, ACK, FIN and RST packets.
-    if (i > TX_BURST_SIZE) {
+    if (i > TX_BURST_SIZE && i % 2 == 0) {
       delay(1);
     }
   }
