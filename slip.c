@@ -78,6 +78,7 @@ void slip_rx(void) {
       return;
     } else if (status == SLIP_DECODE_RST) {
       slip_reset();
+      return;
     }
   }
 }
