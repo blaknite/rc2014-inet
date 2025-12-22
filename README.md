@@ -20,7 +20,9 @@ A NAT gateway that runs on the RC2014 WiFi module and provides internet connecti
 
 ## Run
 
-These tools expect SIO port 2 to be connected to device that supports SLIP. It currently runs on the fixed IP 192.168.1.51. I've been connecting via a Raspberry Pi via the `slattach` command. 
+Flash the gateway to your WiFi module and send `HTTPD.COM` to your RC2014. I have the programs on drive `C:` and the contents of www on drive `D:`. I then switch to drive `D:` and run `C:HTTPD` to serve files from there.
+
+A tcpdump-like debug log can be output by calling `HTTPD -D`
 
 ## Build
 
