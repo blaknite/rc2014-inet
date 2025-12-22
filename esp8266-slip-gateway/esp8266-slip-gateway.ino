@@ -108,13 +108,15 @@ struct SlipDecoder {
 struct netif slipNetif;
 SlipDecoder slipDecoder;
 bool slipInitialized = false;
-uint32_t lastTxTime = 0;
+bool expectingResponse = false;
 
 // Flow control - packet queue
 const uint8_t TX_QUEUE_SIZE = 32;
 struct pbuf* txQueue[TX_QUEUE_SIZE];
 uint8_t txQueueHead = 0;
 uint8_t txQueueTail = 0;
+
+const uint8_t TX_BURST_SIZE = 40;
 
 err_t slipInput(struct pbuf *p, struct netif *inp) {
   return ip_input(p, inp);
@@ -141,8 +143,10 @@ void slipTxFrame(struct pbuf *p) {
       Serial.write(b);
     }
 
-    // Delay to prevent overwhelming the RC2014's slow character-by-character reads
-    if (i % 3 == 1) {
+    // Delay to prevent overwhelming the RC2014's slow character-by-character reads.
+    // RC2014 C/PM has a 60-byte buffer so we can burst the first 40 bytes
+    // which is enough to cover SYN, SYN-ACK, ACK, FIN and RST packets.
+    if (i > TX_BURST_SIZE) {
       delay(1);
     }
   }
@@ -151,7 +155,6 @@ void slipTxFrame(struct pbuf *p) {
   Serial.write(SLIP_END);
   Serial.flush();
 
-  lastTxTime = millis();
   digitalWrite(LED_ACTIVITY, LOW);
 }
 
@@ -188,6 +191,8 @@ void slipTx() {
 
   slipTxFrame(p);
   pbuf_free(p);
+
+  expectingResponse = true;
 }
 
 err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) {
@@ -205,7 +210,7 @@ err_t slipOutput(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr) 
 }
 
 const uint32_t RX_TIMEOUT_MS = 250;
-const uint32_t WAIT_AFTER_TX_MS = 50;
+const uint32_t RX_EMPTY_TIMEOUT_MS = 5;
 
 void slipRxPacket(uint8_t* buffer, size_t length) {
   if (length < 20 || length > SLIP_MTU) return;
@@ -223,29 +228,20 @@ void slipRxPacket(uint8_t* buffer, size_t length) {
   if (slipNetif.input(p, &slipNetif) != ERR_OK) {
     pbuf_free(p);
   }
+
+  expectingResponse = false;
 }
 
 void slipRx() {
-  if (!slipInitialized) return;
-
-  while (!Serial.available()) {
-    if (lastTxTime > 0 && millis() - lastTxTime < WAIT_AFTER_TX_MS) {
-      yield();
-    } else {
-      return;
-    }
-  }
-
-  digitalWrite(LED_ACTIVITY, HIGH);
-
   uint8_t c;
-  uint8_t status;
-  uint32_t startTime = millis();
+  uint8_t status = SLIP_DECODE_OK;
+  uint32_t lastRxTime = millis();
 
   while (true) {
     if (Serial.available()) {
-      startTime = millis();
+      digitalWrite(LED_ACTIVITY, HIGH);
 
+      lastRxTime = millis();
       c = Serial.read();
       status = slipDecoder.decode(c);
 
@@ -254,23 +250,26 @@ void slipRx() {
         slipDecoder.reset();
         digitalWrite(LED_ACTIVITY, LOW);
         return;
-      } else if (status == SLIP_DECODE_SKIP) {
-        continue;
       } else if (status == SLIP_DECODE_RST) {
         slipDecoder.reset();
+        digitalWrite(LED_ACTIVITY, LOW);
         return;
       }
     } else {
-      if (status == SLIP_DECODE_SKIP) {
-        digitalWrite(LED_ACTIVITY, LOW);
-        return;
-      } else if (slipDecoder.length > 0 && millis() - startTime > RX_TIMEOUT_MS) {
-        slipDecoder.reset();
-        digitalWrite(LED_ACTIVITY, LOW);
-        return;
-      }
+      uint32_t elapsed = millis() - lastRxTime;
 
-      yield();
+      if (status == SLIP_DECODE_SKIP && elapsed > RX_EMPTY_TIMEOUT_MS) {
+        digitalWrite(LED_ACTIVITY, LOW);
+        return;
+      } else if (elapsed > RX_TIMEOUT_MS) {
+        digitalWrite(LED_ACTIVITY, LOW);
+        slipDecoder.reset();
+        return;
+      } else {
+        delayMicroseconds(50);
+        yield();
+        digitalWrite(LED_ACTIVITY, LOW);
+      }
     }
   }
 }
@@ -398,6 +397,11 @@ void loop() {
     return;
   }
 
+  if (!slipInitialized) return;
+
   slipTx();
-  slipRx();
+
+  if (Serial.available() || expectingResponse) {
+    slipRx();
+  }
 }

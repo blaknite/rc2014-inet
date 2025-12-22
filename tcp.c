@@ -155,14 +155,6 @@ void tcp_tick(void) {
     }
 
     tcp_sock_table[i].ticks++;
-
-    if (tcp_sock_table[i].ticks >= TCP_TIMEOUT_TICKS) {
-      printf(
-        "Connection timeout: %u.%u.%u.%u\n",
-        tcp_sock_table[i].daddr[0], tcp_sock_table[i].daddr[1], tcp_sock_table[i].daddr[2], tcp_sock_table[i].daddr[3]
-      );
-      tcp_sock_close(&tcp_sock_table[i]);
-    }
   }
 }
 
