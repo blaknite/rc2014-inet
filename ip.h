@@ -19,8 +19,8 @@ struct ip_hdr {
   uint8_t daddr[4];
 };
 
-extern uint8_t local_address[4];
-extern uint8_t gateway_address[4];
+extern const uint8_t local_address[4];
+extern const uint8_t gateway_address[4];
 
 extern uint32_t __LIB__ htonl(uint32_t x) __smallc __z88dk_fastcall;
 extern uint16_t __LIB__ htons(uint16_t x) __smallc __z88dk_fastcall;

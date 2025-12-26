@@ -6,7 +6,7 @@
 
 struct http_client *http_client_table;
 
-char *mime_types[] = {
+const char * const mime_types[] = {
   "htm", "text/html",
   "txt", "text/plain",
   "css", "text/css",
@@ -21,7 +21,7 @@ char *mime_types[] = {
   NULL
 };
 
-char *text_types[] = { "htm", "txt", "css", "js", "jsn", "xml", "svg", NULL };
+const char * const text_types[] = { "htm", "txt", "css", "js", "jsn", "xml", "svg", NULL };
 
 uint8_t *http_tx_buffer;
 
