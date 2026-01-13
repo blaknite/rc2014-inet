@@ -225,23 +225,25 @@ void http_parse_request(struct http_client *c) {
 }
 
 void http_open(struct tcp_sock *s) {
-  uint8_t i;
   struct http_client *c = &http_client_table[0];
+  struct http_client *cc;
+  uint8_t i;
 
   for (i = 0; i < HTTP_MAX_CLIENTS; i++) {
-    if (!http_client_table[i].s) {
-      c = &http_client_table[i];
+    cc = &http_client_table[i];
+    if (!cc->s) {
+      c = cc;
       break;
     }
 
-    if (http_client_table[i].s->ticks > c->s->ticks) {
-      c = &http_client_table[i];
+    if (cc->s->ticks > c->s->ticks) {
+      c = cc;
     }
   }
 
   if (c->s) {
-    printf("Client limit reached: evicting %u.%u.%u.%u\n",
-      c->s->daddr[0], c->s->daddr[1], c->s->daddr[2], c->s->daddr[3]);
+    printf("Client limit reached: evicting %d.%d.%d.%d:%u ticks=%u\n",
+      c->s->daddr[0], c->s->daddr[1], c->s->daddr[2], c->s->daddr[3], c->s->dport, c->s->ticks);
 
     tcp_sock_close(c->s);
   }

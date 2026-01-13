@@ -6,7 +6,7 @@
 
 #define TCP_PACKET_LEN 536 // 576 MTU - 20 (IP header) - 20 (TCP header)
 
-#define TCP_TIMEOUT_TICKS 30
+#define TCP_TIMEOUT_TICKS 200
 
 #define TCP_CLOSED 0
 #define TCP_LISTEN 1
@@ -29,16 +29,15 @@
 #define TCP_ECN 0x40
 #define TCP_WIN 0x80
 
-#define tcp_offset(tcph) ((tcph)->offset_reserved >> 4)
-#define tcp_reserved(tcph) ((tcph)->offset_reserved & 0x0F)
-#define tcp_hl(tcph) (tcp_offset(tcph) * 4)
+#define tcp_hl(tcph) (tcph->offset * 4)
 
 struct tcp_hdr {
   uint16_t sport;
   uint16_t dport;
   uint32_t seq;
   uint32_t ack_seq;
-  uint8_t offset_reserved;  // offset in upper 4 bits, reserved in lower 4 bits
+  uint8_t reserved : 4;
+  uint8_t offset : 4;
   uint8_t flags;
   uint16_t win;
   uint16_t csum;

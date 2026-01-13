@@ -32,6 +32,7 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
   struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
   struct tcp_listener *l = NULL;
   struct tcp_sock *s = NULL;
+  struct tcp_sock *cs;
   uint8_t i;
   uint16_t dport_host = ntohs(tcph->dport);
   uint16_t sport_host = ntohs(tcph->sport);
@@ -59,8 +60,10 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
     s = &tcp_sock_table[0];
 
     for (i = 1; i < TCP_MAX_SOCKETS; i++) {
-      if (tcp_sock_table[i].ticks > s->ticks) {
-        s = &tcp_sock_table[i];
+      cs = &tcp_sock_table[i];
+
+      if (cs->ticks > s->ticks) {
+        s = cs;
       }
     }
   }
@@ -99,36 +102,39 @@ uint8_t tcp_sock_matches_conn_id(struct tcp_sock *s, uint32_t ack_seq) {
 
 struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
   struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+  struct tcp_sock *s;
   uint8_t i;
   uint16_t sport_host = ntohs(tcph->sport);
   uint16_t dport_host = ntohs(tcph->dport);
   uint32_t ack_seq_host = ntohl(tcph->ack_seq);
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
-    if (tcp_sock_table[i].state == TCP_CLOSED) {
+    s = &tcp_sock_table[i];
+
+    if (s->state == TCP_CLOSED) {
       continue;
     }
 
-    if (tcp_sock_table[i].sport != dport_host) {
+    if (s->sport != dport_host) {
       continue;
     }
 
-    if (memcmp(tcp_sock_table[i].daddr, iph->saddr, 4)) {
+    if (memcmp(s->daddr, iph->saddr, 4)) {
       continue;
     }
 
-    if (tcp_sock_table[i].dport != sport_host) {
+    if (s->dport != sport_host) {
       continue;
     }
 
     // Verify conn_id to reject old packets from a previous connections.
-    if (tcp_sock_table[i].state >= TCP_SYN_RCVD && (tcph->flags & TCP_ACK)) {
-      if (!tcp_sock_matches_conn_id(&tcp_sock_table[i], ack_seq_host)) {
+    if (s->state >= TCP_SYN_RCVD && (tcph->flags & TCP_ACK)) {
+      if (!tcp_sock_matches_conn_id(s, ack_seq_host)) {
         continue;
       }
     }
 
-    return &tcp_sock_table[i];
+    return s;
   }
 
   if (tcph->flags & TCP_SYN) {
@@ -147,14 +153,23 @@ void tcp_sock_close(struct tcp_sock *s) {
 }
 
 void tcp_tick(void) {
+  struct tcp_sock *s;
   uint8_t i;
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
-    if (tcp_sock_table[i].state == TCP_CLOSED) {
+    s = &tcp_sock_table[i];
+
+    if (s->state == TCP_CLOSED) {
       continue;
     }
 
-    tcp_sock_table[i].ticks++;
+    s->ticks++;
+
+    if (s->ticks > TCP_TIMEOUT_TICKS) {
+      printf("TCP timeout: closing socket %d.%d.%d.%d:%u ticks=%u\n",
+        s->daddr[0], s->daddr[1], s->daddr[2], s->daddr[3], s->dport, s->ticks);
+      tcp_sock_close(s);
+    }
   }
 }
 
@@ -216,16 +231,18 @@ void tcp_rx(struct ip_hdr *iph) {
 
   s->ticks = 0;
 
-  // Retransmission - already processed, drop silently
-  if (s->state != TCP_LISTEN && tcph->seq < s->remote_seq) {
-    return;
-  }
+  if (s->state != TCP_LISTEN) {
+    // Retransmission - already processed, drop silently
+    if (tcph->seq < s->remote_seq) {
+      return;
+    }
 
-  // Out of order packet
-  if (s->state != TCP_LISTEN && tcph->seq != s->remote_seq) {
-    tcp_tx_rst(s);
-    tcp_sock_close(s);
-    return;
+    // Out of order packet
+    if (tcph->seq != s->remote_seq) {
+      tcp_tx_rst(s);
+      tcp_sock_close(s);
+      return;
+    }
   }
 
   switch (s->state) {
@@ -349,7 +366,7 @@ struct ip_hdr *tcp_packet_init(struct tcp_sock *s) {
   tcph->dport = s->dport;
   tcph->seq = s->local_seq;
   tcph->ack_seq = s->remote_seq;
-  tcph->offset_reserved = (5 << 4);  // offset 5 (20 bytes), reserved 0
+  tcph->offset = 5;
   tcph->win = TCP_PACKET_LEN;
 
   memcpy(iph->daddr, s->daddr, 4);
@@ -467,7 +484,7 @@ void tcp_reject(struct ip_hdr *in_iph) {
   tcph->dport = in_tcph->sport;
   tcph->seq = in_tcph->ack_seq;
   tcph->ack_seq = in_tcph->seq + tcpd_len;
-  tcph->offset_reserved = (5 << 4);
+  tcph->offset = 5;
   tcph->win = TCP_PACKET_LEN;
   tcph->flags |= TCP_RST;
 
@@ -498,26 +515,32 @@ void tcp_listen(
   void (*send)(struct tcp_sock *, uint16_t),
   void (*close)(struct tcp_sock *)
 ) {
+  struct tcp_listener *l;
   uint8_t i;
 
   for (i = 0; i < TCP_MAX_LISTENERS; i++) {
-    if (tcp_listen_table[i].port == 0) {
-      tcp_listen_table[i].port = port;
-      tcp_listen_table[i].open = open;
-      tcp_listen_table[i].recv = recv;
-      tcp_listen_table[i].send = send;
-      tcp_listen_table[i].close = close;
+    l = &tcp_listen_table[i];
+
+    if (l->port == 0) {
+      l->port = port;
+      l->open = open;
+      l->recv = recv;
+      l->send = send;
+      l->close = close;
       break;
     }
   }
 }
 
 void tcp_unlisten(uint16_t port) {
+  struct tcp_listener *l;
   uint8_t i;
 
   for (i = 0; i < TCP_MAX_LISTENERS; i++) {
-    if (tcp_listen_table[i].port == port) {
-      tcp_listen_table[i].port = 0;
+    l = &tcp_listen_table[i];
+
+    if (l->port == port) {
+      l->port = 0;
     }
   }
 }
