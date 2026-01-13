@@ -22,15 +22,8 @@
 #define slip_buffer_alloc() (calloc(SLIP_MAX, 1))
 // #define slip_rx_ready() (*(uint8_t *)BIOS_SERB_BUFUSED > 0)
 
-typedef struct {
-  uint8_t *buffer;
-  uint16_t length;
-  uint8_t escaped;
-} slip_decoder_t;
-
 extern uint8_t *slip_rx_buffer;
 extern uint8_t *slip_tx_buffer;
-extern slip_decoder_t slip_decoder;
 
 void slip_init(void);
 void slip_rx(void);
