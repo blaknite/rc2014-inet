@@ -2,9 +2,19 @@
 #include <stdio.h>
 #include <string.h>
 #include "ip.h"
-#include "icmp.h"
 #include "slip.h"
+
+#ifdef ENABLE_ICMP
+#include "icmp.h"
+#endif
+
+#ifdef ENABLE_TCP
 #include "tcp.h"
+#endif
+
+#ifdef ENABLE_UDP
+#include "udp.h"
+#endif
 
 const uint8_t local_address[4] = {192, 168, 1, 51};
 const uint8_t gateway_address[4] = {192, 168, 1, 1};
@@ -75,12 +85,21 @@ void ip_debug(struct ip_hdr *iph) {
     ip_proto_s(iph->proto), iph->proto, iph->len);
 
   switch (iph->proto) {
+#ifdef ENABLE_ICMP
     case ICMP:
       icmp_debug(iph);
       break;
+#endif
+#ifdef ENABLE_TCP
     case TCP:
       tcp_debug(iph);
       break;
+#endif
+#ifdef ENABLE_UDP
+    case UDP:
+      udp_debug(iph);
+      break;
+#endif
   }
 
   printf("\n");
@@ -129,13 +148,23 @@ void ip_rx(struct ip_hdr *iph) {
   ip_debug(iph);
 
   switch (iph->proto) {
+#ifdef ENABLE_ICMP
     case ICMP:
       icmp_rx(iph);
       break;
+#endif
 
+#ifdef ENABLE_TCP
     case TCP:
       tcp_rx(iph);
       break;
+#endif
+
+#ifdef ENABLE_UDP
+    case UDP:
+      udp_rx(iph);
+      break;
+#endif
   }
 }
 
