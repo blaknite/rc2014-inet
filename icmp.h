@@ -22,6 +22,7 @@ struct icmp_hdr {
 void icmp_debug(struct ip_hdr *iph);
 void icmp_rx(struct ip_hdr *iph);
 void icmp_tx_reply(struct ip_hdr *rx_iph);
-void icmp_tx_request(uint8_t *daddr);
+void icmp_tx_request(uint8_t *daddr, uint16_t seq);
+void icmp_listen(void (*callback)(struct ip_hdr *iph, struct icmp_hdr *icmph));
 
 #endif

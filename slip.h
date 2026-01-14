@@ -9,10 +9,10 @@
 #define SLIP_ESC_END 0xdc
 #define SLIP_ESC_ESC 0xdd
 
-// #define BIOS_SERB_BUF 0xFF83
-// #define BIOS_SERB_BUFUSED 0xFFBE
-// #define BIOS_SERB_RDPTR 0xFFBF
-// #define BIOS_SERB_BUFSIZE 60
+// #define BIOS_RX_BUF 0xFF83
+#define BIOS_RX_BUFUSED 0xFFBE
+// #define BIOS_RX_RDPTR 0xFFBF
+// #define BIOS_RX_BUFSIZE 60
 
 #define SLIP_DECODE_OK 0
 #define SLIP_DECODE_SKIP 1
@@ -20,7 +20,7 @@
 #define SLIP_DECODE_RST 3
 
 #define slip_buffer_alloc() (calloc(SLIP_MAX, 1))
-// #define slip_rx_ready() (*(uint8_t *)BIOS_SERB_BUFUSED > 0)
+#define slip_rx_ready() (*(uint8_t *)BIOS_RX_BUFUSED > 0)
 
 extern uint8_t *slip_rx_buffer;
 extern uint8_t *slip_tx_buffer;

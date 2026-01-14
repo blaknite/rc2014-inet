@@ -5,6 +5,8 @@
 #include "ip.h"
 #include "icmp.h"
 
+static void (*rx_cb)(struct ip_hdr *iph, struct icmp_hdr *icmph) = NULL;
+
 void icmp_debug(struct ip_hdr *iph) {
   struct icmp_hdr *icmph = (struct icmp_hdr *)ip_data(iph);
 
@@ -23,7 +25,9 @@ void icmp_rx(struct ip_hdr *iph) {
   uint16_t icmp_len = ip_data_len(iph);
   uint16_t csum = checksum((uint16_t *)icmph, icmp_len, 0);
 
-  if (csum != 0) return;
+  if (csum != 0 && csum != 0xFFFF) {
+    return;
+  }
 
   switch (icmph->type) {
     case ICMP_ECHO_REQUEST:
@@ -31,6 +35,9 @@ void icmp_rx(struct ip_hdr *iph) {
       break;
 
     case ICMP_ECHO_REPLY:
+      if (rx_cb) {
+        rx_cb(iph, icmph);
+      }
       break;
 
     case ICMP_DST_UNREACHABLE:
@@ -69,7 +76,7 @@ void icmp_tx_reply(struct ip_hdr *rx_iph) {
   ip_tx(tx_iph);
 }
 
-void icmp_tx_request(uint8_t *daddr) {
+void icmp_tx_request(uint8_t *daddr, uint16_t seq) {
   struct ip_hdr *iph = ip_hdr_init();
   struct icmp_hdr *icmph = (struct icmp_hdr *)ip_data(iph);
 
@@ -82,9 +89,13 @@ void icmp_tx_request(uint8_t *daddr) {
 
   icmph->type = ICMP_ECHO_REQUEST;
   icmph->id = 0;
-  icmph->seq = 0;
+  icmph->seq = htons(seq);
 
   icmph->csum = checksum((uint16_t *)icmph, icmp_len + 8, 0);
 
   ip_tx(iph);
+}
+
+void icmp_listen(void (*callback)(struct ip_hdr *iph, struct icmp_hdr *icmph)) {
+  rx_cb = callback;
 }
