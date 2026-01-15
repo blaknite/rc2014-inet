@@ -28,25 +28,54 @@ uint16_t tcp_data_len(struct ip_hdr *iph, struct tcp_hdr *tcph) {
   return iph->len - ip_hl(iph) - tcp_hl(tcph);
 }
 
-struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
-  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
-  struct tcp_listener *l = NULL;
+uint8_t tcp_sock_matches_conn_id(struct tcp_sock *s, uint32_t ack_seq) {
+  uint32_t seq_offset = s->local_seq - s->local_isn;
+  uint8_t pkt_conn_id = (ack_seq - seq_offset) >> 24;
+  return pkt_conn_id == s->conn_id;
+}
+
+void tcp_tick(void) {
+  struct tcp_sock *s;
+  uint8_t i;
+
+  for (i = 0; i < TCP_MAX_SOCKETS; i++) {
+    s = &tcp_sock_table[i];
+
+    if (s->state == TCP_CLOSED) {
+      continue;
+    }
+
+    s->ticks++;
+
+    if (s->ticks > TCP_TIMEOUT_TICKS) {
+      printf("TCP timeout: closing socket %d.%d.%d.%d:%u ticks=%u\n",
+        s->daddr[0], s->daddr[1], s->daddr[2], s->daddr[3], s->dport, s->ticks);
+      tcp_sock_close(s);
+    }
+  }
+}
+
+uint16_t tcp_checksum(struct ip_hdr *iph, uint8_t *data, uint16_t len) {
+  struct tcp_psuedo_hdr hdr;
+  uint16_t sum;
+
+  memset(&hdr, 0, sizeof(struct tcp_psuedo_hdr));
+
+  memcpy(hdr.saddr, iph->saddr, 4);
+  memcpy(hdr.daddr, iph->daddr, 4);
+
+  hdr.proto = iph->proto;
+  hdr.len = htons(len);
+
+  sum = ~checksum((uint16_t *)&hdr, 12, 0);
+
+  return checksum((uint16_t *)data, len, sum);
+}
+
+struct tcp_sock *tcp_sock_alloc(void) {
   struct tcp_sock *s = NULL;
   struct tcp_sock *cs;
   uint8_t i;
-  uint16_t dport_host = ntohs(tcph->dport);
-  uint16_t sport_host = ntohs(tcph->sport);
-
-  for (i = 0; i < TCP_MAX_LISTENERS; i++) {
-    if (tcp_listen_table[i].port == dport_host) {
-      l = &tcp_listen_table[i];
-      break;
-    }
-  }
-
-  if (i == TCP_MAX_LISTENERS) {
-    return NULL;
-  }
 
   for (i = 0; i < TCP_MAX_SOCKETS; i++) {
     if (tcp_sock_table[i].state == TCP_CLOSED) {
@@ -77,8 +106,42 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
 
   memset(s, 0, sizeof(struct tcp_sock));
 
-  s->state = TCP_LISTEN;
   s->conn_id = ++next_conn_id;
+
+  s->local_seq = rand();
+  s->local_seq |= ((uint32_t)rand()) << 16;
+
+  // Store conn_id in upper 8 bits of the sequence number
+  s->local_seq = (s->local_seq & 0x00FFFFFF) | ((uint32_t)s->conn_id << 24);
+
+  // Save the initial sequence number so we can extract the conn_id from response packets
+  s->local_isn = s->local_seq;
+
+  return s;
+}
+
+struct tcp_sock *tcp_accept(struct ip_hdr *iph) {
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+  struct tcp_listener *l = NULL;
+  struct tcp_sock *s = NULL;
+  uint8_t i;
+  uint16_t dport_host = ntohs(tcph->dport);
+  uint16_t sport_host = ntohs(tcph->sport);
+
+  for (i = 0; i < TCP_MAX_LISTENERS; i++) {
+    if (tcp_listen_table[i].port == dport_host) {
+      l = &tcp_listen_table[i];
+      break;
+    }
+  }
+
+  if (i == TCP_MAX_LISTENERS) {
+    return NULL;
+  }
+
+  s = tcp_sock_alloc();
+
+  s->state = TCP_LISTEN;
 
   s->sport = dport_host;
   s->dport = sport_host;
@@ -94,10 +157,40 @@ struct tcp_sock *tcp_sock_init(struct ip_hdr *iph) {
   return s;
 }
 
-uint8_t tcp_sock_matches_conn_id(struct tcp_sock *s, uint32_t ack_seq) {
-  uint32_t seq_offset = s->local_seq - s->local_isn;
-  uint8_t pkt_conn_id = (ack_seq - seq_offset) >> 24;
-  return pkt_conn_id == s->conn_id;
+struct tcp_sock *tcp_connect(
+  uint8_t *addr,
+  uint16_t port,
+  void (*open)(struct tcp_sock *),
+  void (*recv)(struct tcp_sock *, uint8_t *, uint16_t),
+  void (*send)(struct tcp_sock *, uint16_t),
+  void (*close)(struct tcp_sock *)
+) {
+  struct tcp_sock *s = NULL;
+  struct ip_hdr *iph;
+  struct tcp_hdr *tcph;
+  uint8_t i;
+
+  s = tcp_sock_alloc();
+
+  s->state = TCP_SYN_SENT;
+
+  // Use ephemeral port in range 1024-2047
+  s->sport = 1024 + (rand() & 0x3FF);
+  s->dport = port;
+
+  s->open = open;
+  s->recv = recv;
+  s->send = send;
+  s->close = close;
+
+  memcpy(s->saddr, local_address, 4);
+  memcpy(s->daddr, addr, 4);
+
+  tcp_tx_syn(s);
+
+  s->local_seq++;
+
+  return s;
 }
 
 struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
@@ -138,7 +231,7 @@ struct tcp_sock *tcp_sock_get(struct ip_hdr *iph) {
   }
 
   if (tcph->flags & TCP_SYN) {
-    return tcp_sock_init(iph);
+    return tcp_accept(iph);
   }
 
   return NULL;
@@ -150,44 +243,6 @@ void tcp_sock_close(struct tcp_sock *s) {
   if (s->close) {
     (*s->close)(s);
   }
-}
-
-void tcp_tick(void) {
-  struct tcp_sock *s;
-  uint8_t i;
-
-  for (i = 0; i < TCP_MAX_SOCKETS; i++) {
-    s = &tcp_sock_table[i];
-
-    if (s->state == TCP_CLOSED) {
-      continue;
-    }
-
-    s->ticks++;
-
-    if (s->ticks > TCP_TIMEOUT_TICKS) {
-      printf("TCP timeout: closing socket %d.%d.%d.%d:%u ticks=%u\n",
-        s->daddr[0], s->daddr[1], s->daddr[2], s->daddr[3], s->dport, s->ticks);
-      tcp_sock_close(s);
-    }
-  }
-}
-
-uint16_t tcp_checksum(struct ip_hdr *iph, uint8_t *data, uint16_t len) {
-  struct tcp_psuedo_hdr hdr;
-  uint16_t sum;
-
-  memset(&hdr, 0, sizeof(struct tcp_psuedo_hdr));
-
-  memcpy(hdr.saddr, iph->saddr, 4);
-  memcpy(hdr.daddr, iph->daddr, 4);
-
-  hdr.proto = iph->proto;
-  hdr.len = htons(len);
-
-  sum = ~checksum((uint16_t *)&hdr, 12, 0);
-
-  return checksum((uint16_t *)data, len, sum);
 }
 
 void tcp_rx(struct ip_hdr *iph) {
@@ -231,7 +286,7 @@ void tcp_rx(struct ip_hdr *iph) {
 
   s->ticks = 0;
 
-  if (s->state != TCP_LISTEN) {
+  if (s->state != TCP_LISTEN && s->state != TCP_SYN_SENT) {
     // Retransmission - already processed, drop silently
     if (tcph->seq < s->remote_seq) {
       return;
@@ -248,10 +303,6 @@ void tcp_rx(struct ip_hdr *iph) {
   switch (s->state) {
     case TCP_LISTEN:
       if (tcph->flags & TCP_SYN) {
-        s->local_seq = rand();
-        s->local_seq |= ((uint32_t)rand()) << 16;
-        s->local_seq = (s->local_seq & 0x00FFFFFF) | ((uint32_t)s->conn_id << 24);
-        s->local_isn = s->local_seq;
         s->remote_seq = tcph->seq + 1;
 
         tcp_tx_synack(s);
@@ -273,6 +324,8 @@ void tcp_rx(struct ip_hdr *iph) {
 
     case TCP_SYN_SENT:
       if (tcph->flags & (TCP_SYN|TCP_ACK)) {
+        s->remote_seq = tcph->seq + 1;
+
         tcp_tx_ack(s);
 
         s->local_seq++;
@@ -430,6 +483,15 @@ void tcp_tx_data_fin(struct tcp_sock *s, uint8_t *data, uint16_t len) {
   if (s->close) {
     (*s->close)(s);
   }
+}
+
+void tcp_tx_syn(struct tcp_sock *s) {
+  struct ip_hdr *iph = tcp_packet_init(s);
+  struct tcp_hdr *tcph = (struct tcp_hdr *)ip_data(iph);
+
+  tcph->flags |= TCP_SYN;
+
+  tcp_tx(iph);
 }
 
 void tcp_tx_ack(struct tcp_sock *s) {

@@ -90,6 +90,7 @@ void tcp_rx(struct ip_hdr *iph);
 void tcp_tx(struct ip_hdr *iph);
 void tcp_tx_data(struct tcp_sock *s, uint8_t *data, uint16_t len);
 void tcp_tx_data_fin(struct tcp_sock *s, uint8_t *data, uint16_t len);
+void tcp_tx_syn(struct tcp_sock *s);
 void tcp_tx_ack(struct tcp_sock *s);
 void tcp_tx_synack(struct tcp_sock *s);
 void tcp_tx_fin(struct tcp_sock *s);
@@ -104,5 +105,13 @@ void tcp_listen(
   void (*close)(struct tcp_sock *)
 );
 void tcp_unlisten(uint16_t port);
+struct tcp_sock *tcp_connect(
+  uint8_t *addr,
+  uint16_t port,
+  void (*open)(struct tcp_sock *),
+  void (*recv)(struct tcp_sock *, uint8_t *, uint16_t),
+  void (*send)(struct tcp_sock *, uint16_t),
+  void (*close)(struct tcp_sock *)
+);
 
 #endif
