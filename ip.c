@@ -61,6 +61,18 @@ uint8_t *ip_proto_s(uint8_t proto) {
   }
 }
 
+void ip_init(void) {
+  slip_init();
+
+  #ifdef ENABLE_TCP
+  tcp_init();
+  #endif
+
+  #ifdef ENABLE_UDP
+  udp_init();
+  #endif
+}
+
 void ip_debug_enable(uint8_t verbose) {
   debug_enabled = 1;
   debug_verbose = verbose;
@@ -85,21 +97,23 @@ void ip_debug(struct ip_hdr *iph) {
     ip_proto_s(iph->proto), iph->proto, iph->len);
 
   switch (iph->proto) {
-#ifdef ENABLE_ICMP
+    #ifdef ENABLE_ICMP
     case ICMP:
       icmp_debug(iph);
       break;
-#endif
-#ifdef ENABLE_TCP
+    #endif
+
+    #ifdef ENABLE_TCP
     case TCP:
       tcp_debug(iph);
       break;
-#endif
-#ifdef ENABLE_UDP
+    #endif
+
+    #ifdef ENABLE_UDP
     case UDP:
       udp_debug(iph);
       break;
-#endif
+    #endif
   }
 
   printf("\n");
@@ -148,23 +162,23 @@ void ip_rx(struct ip_hdr *iph) {
   ip_debug(iph);
 
   switch (iph->proto) {
-#ifdef ENABLE_ICMP
+    #ifdef ENABLE_ICMP
     case ICMP:
       icmp_rx(iph);
       break;
-#endif
+    #endif
 
-#ifdef ENABLE_TCP
+    #ifdef ENABLE_TCP
     case TCP:
       tcp_rx(iph);
       break;
-#endif
+    #endif
 
-#ifdef ENABLE_UDP
+    #ifdef ENABLE_UDP
     case UDP:
       udp_rx(iph);
       break;
-#endif
+    #endif
   }
 }
 

@@ -44,8 +44,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  slip_init();
-  tcp_init();
+  ip_init();
   http_init();
 
   if (debug) {

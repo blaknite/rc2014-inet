@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
 
   host = argv[1];
 
-  slip_init();
+  ip_init();
 
   icmp_listen(ping_rx);
 

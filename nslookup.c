@@ -44,8 +44,7 @@ int main(int argc, char *argv[]) {
     dns_server[3] = 8;
   }
 
-  slip_init();
-  udp_init();
+  ip_init();
 
   printf("DNS Server: %u.%u.%u.%u\n", dns_server[0], dns_server[1], dns_server[2], dns_server[3]);
 
